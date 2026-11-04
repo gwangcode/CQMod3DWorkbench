@@ -2,7 +2,6 @@ import FreeCAD
 import FreeCADGui
 
 def get_python_executable():
-    # 把 os 和 sys 在这个函数里局部导入
     import os
     import sys
     exe = sys.executable
@@ -33,7 +32,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         FreeCAD.Console.PrintMessage("🔥 CQ Mod3D Workbench Initialized\n")
 
     def install_dependencies_async(self, main_window, on_success_callback):
-        # 【核心修复】在函数最开头直接导入所有可能丢失的库
         import os
         import sys
         import subprocess
@@ -55,7 +53,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         QtWidgets.QApplication.processEvents()
 
         def _install():
-            # 子线程内部也必须重新导入！
             import subprocess
             try:
                 from PySide6 import QtCore
@@ -71,7 +68,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
                 
                 cmd = [python_exe, "-m", "pip", "install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]
                 
-                # 增加 creationflags 隐藏 Windows 下的黑框弹窗
                 kwargs = {}
                 if hasattr(subprocess, 'CREATE_NO_WINDOW'):
                     kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
@@ -106,19 +102,18 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
                 FreeCAD.Console.PrintError(f"Installation error: {str(e)}\n")
                 QtCore.QTimer.singleShot(0, progress_msg.close)
 
-        # 使用刚才导入的 threading
         thread = threading.Thread(target=_install)
         thread.daemon = True
         thread.start()
 
     def Activated(self):
         try:
-            from PySide6 import QtWidgets
+            from PySide6 import QtWidgets, QtCore
         except Exception:
             try:
-                from PySide2 import QtWidgets
+                from PySide2 import QtWidgets, QtCore
             except Exception:
-                from PySide import QtWidgets
+                from PySide import QtWidgets, QtCore
 
         try:
             import cadquery
@@ -151,15 +146,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         self.dock = QtWidgets.QDockWidget("CQ Mod 3D Terminal", main_window)
         self.dock.setObjectName("CQMod3DTerminalDock")
         self.dock.setWidget(self.terminal)
-        
-        # QtCore 也在这里动态获取一下
-        try:
-            from PySide6 import QtCore
-        except Exception:
-            try:
-                from PySide2 import QtCore
-            except Exception:
-                from PySide import QtCore
         main_window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.dock)
 
     def Deactivated(self):
@@ -179,4 +165,5 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
     def GetClassName(self):
         return "Gui::PythonWorkbench"
 
-FreeCADGui.AddWorkbench(CQMod3DWorkbench())
+# 【修复点】这里必须是小写的 addWorkbench
+FreeCADGui.addWorkbench(CQMod3DWorkbench())
