@@ -15,7 +15,6 @@ def show(cq_obj, name="CQ_Object"):
     
     try:
         import cadquery as cq
-        # 使用临时文件传递，避免跨 OCC 库版本的内存强转导致段错误 (Segfault)
         cq.exporters.export(cq_obj, temp_brep_path, "BREP")
         
         shape = Part.Shape()
@@ -23,9 +22,13 @@ def show(cq_obj, name="CQ_Object"):
         
         doc = FreeCAD.ActiveDocument
         if not doc:
-            doc = FreeCAD.newDocument()
-            
-        # 使用 addObject 代替 Part.show()，杜绝无头环境下的 ViewObject 刷新崩溃
+            # 无头环境核心修复：如果活动文档为空，尝试获取列表中已存在的文档
+            docs = FreeCAD.listDocuments()
+            if docs:
+                doc = list(docs.values())[0]
+            else:
+                doc = FreeCAD.newDocument()
+                
         obj = doc.addObject("Part::Feature", name)
         obj.Shape = shape
         doc.recompute()
