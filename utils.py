@@ -7,7 +7,7 @@ def show(cq_obj, name="CQ_Object"):
     """将 CadQuery Workplane 对象转换为 FreeCAD 实体并显示在视图中。"""
     if not hasattr(cq_obj, "val"):
         FreeCAD.Console.PrintError("Input is not a cq.Workplane!\n")
-        return
+        return None
         
     temp_brep = tempfile.NamedTemporaryFile(suffix=".brep", delete=False)
     temp_brep_path = temp_brep.name
@@ -31,8 +31,11 @@ def show(cq_obj, name="CQ_Object"):
         doc.recompute()
         
         FreeCAD.Console.PrintMessage(f"✅ Created FreeCAD object: {name}\n")
+        # 【核心修改】把生成的对象返回，让终端能够获取它的属性
+        return obj  
     except Exception as e:
         FreeCAD.Console.PrintError(f"❌ Creation failed: {str(e)}\n")
+        return None
     finally:
         if os.path.exists(temp_brep_path):
             os.unlink(temp_brep_path)
