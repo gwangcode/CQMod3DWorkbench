@@ -8,10 +8,15 @@ import codeop
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
 except ImportError:
-    from PySide2 import QtCore, QtGui, QtWidgets
+    try:
+        from PySide2 import QtCore, QtGui, QtWidgets
+    except ImportError:
+        from PySide import QtCore, QtGui, QtWidgets
 
 try:
-    from cq_mod3d import *
+    import cadquery as cq
+    # 引入 cq_mod3d 并同时保留模块名，以便在代码里也能用 m3.xxx
+    import cq_mod3d
     from utils import show
 except ImportError as e:
     FreeCAD.Console.PrintError(f"Failed to load cq_mod3d: {e}\n")
@@ -20,7 +25,23 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
-        self.local_vars = {"App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show}
+        
+        # 构建终端执行环境
+        self.local_vars = {
+            "App": FreeCAD,
+            "Gui": FreeCADGui,
+            "Part": Part,
+            "show": show,
+            "cq": cq,
+            "m3": cq_mod3d,      # 保留 m3.xxx 的调用方式
+            "cq_mod3d": cq_mod3d # 保留 cq_mod3d.xxx 的调用方式
+        }
+        
+        # 【核心改动】等价于在这里执行了 from cq_mod3d import *
+        if 'cq_mod3d' in sys.modules:
+            for name in dir(cq_mod3d):
+                if not name.startswith("_"):
+                    self.local_vars[name] = getattr(cq_mod3d, name)
         
         self.old_stdout = sys.stdout
         self.old_stderr = sys.stderr
