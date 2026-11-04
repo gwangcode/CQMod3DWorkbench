@@ -19,23 +19,24 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         import os
         import sys
         exe = sys.executable
-        if "FreeCAD" in os.path.basename(exe):
-            base_dir = os.path.dirname(exe)
-            # 1. 优先找同目录或上级目录的 python.exe
-            for name in ["python.exe", "pythonw.exe"]:
-                candidates = [
-                    os.path.join(base_dir, name),
-                    os.path.join(os.path.dirname(base_dir), name),
-                    os.path.join(os.path.dirname(base_dir), "bin", name)
-                ]
-                for c in candidates:
-                    if os.path.exists(c):
-                        return c, True
-            # 2. 找不到 python.exe，退而求其次找 freecadcmd.exe
-            cmd_exe = os.path.join(base_dir, "freecadcmd.exe")
-            if os.path.exists(cmd_exe):
-                return cmd_exe, False
-        # 3. 兜底
+        base_dir = os.path.dirname(exe)
+        
+        # 优先找同目录下的 python.exe
+        for name in ["python.exe", "pythonw.exe"]:
+            candidates = [
+                os.path.join(base_dir, name),
+                os.path.join(os.path.dirname(base_dir), name),
+                os.path.join(os.path.dirname(base_dir), "bin", name)
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    return c, True
+                    
+        # 找不到 python.exe，找 freecadcmd.exe（它是专门的无头引擎，不会弹窗报错）
+        cmd_exe = os.path.join(base_dir, "freecadcmd.exe")
+        if os.path.exists(cmd_exe):
+            return cmd_exe, False
+            
         return exe, False
 
     def install_dependencies_async(self, main_window, on_success_callback):
@@ -55,7 +56,7 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
 
         progress_msg = QtWidgets.QMessageBox(main_window)
         progress_msg.setWindowTitle("Installing Dependencies")
-        progress_msg.setText("First run of CQ Mod3D. Auto-installing required libraries...\n\nThis may take a few minutes.")
+        progress_msg.setText("First run of CQ Mod3D. Auto-installing required libraries...\n\nA black command window will appear. Please wait a few minutes.")
         progress_msg.setStandardButtons(QtWidgets.QMessageBox.NoButton)
         progress_msg.show()
         QtWidgets.QApplication.processEvents()
@@ -65,10 +66,8 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         
         script_path = None
         if is_python:
-            # 如果是原生 python.exe，直接跑 -m pip
             cmd = [exe, "-m", "pip", "install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]
         else:
-            # 如果是 freecadcmd.exe，生成临时脚本让它执行
             script_content = """
 import sys
 try:
@@ -88,11 +87,8 @@ sys.exit(1)
                 f.write(script_content)
             cmd = [exe, script_path]
             
-        kwargs = {}
-        if hasattr(subprocess, 'CREATE_NO_WINDOW'):
-            kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
-            
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kwargs)
+        # 【核心修复】千万不要加 CREATE_NO_WINDOW，必须让黑框弹出来提供 stdout！
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
         def _reader():
             for line in iter(process.stdout.readline, ""):
@@ -111,10 +107,8 @@ sys.exit(1)
                 timer.stop()
                 progress_msg.close()
                 if script_path and os.path.exists(script_path):
-                    try:
-                        os.unlink(script_path)
-                    except:
-                        pass
+                    try: os.unlink(script_path)
+                    except: pass
                 
                 if process.returncode == 0:
                     QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!\nLoading terminal...")
