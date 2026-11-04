@@ -21,7 +21,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         exe = sys.executable
         base_dir = os.path.dirname(exe)
         
-        # 优先找同目录下的 python.exe
         for name in ["python.exe", "pythonw.exe"]:
             candidates = [
                 os.path.join(base_dir, name),
@@ -32,7 +31,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
                 if os.path.exists(c):
                     return c, True
                     
-        # 找不到 python.exe，找 freecadcmd.exe（它是专门的无头引擎，不会弹窗报错）
         cmd_exe = os.path.join(base_dir, "freecadcmd.exe")
         if os.path.exists(cmd_exe):
             return cmd_exe, False
@@ -41,7 +39,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
 
     def install_dependencies_async(self, main_window, on_success_callback):
         import subprocess
-        import threading
         import tempfile
         import os
         import sys
@@ -56,7 +53,7 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
 
         progress_msg = QtWidgets.QMessageBox(main_window)
         progress_msg.setWindowTitle("Installing Dependencies")
-        progress_msg.setText("First run of CQ Mod3D. Auto-installing required libraries...\n\nA black command window will appear. Please wait a few minutes.")
+        progress_msg.setText("First run of CQ Mod3D. Auto-installing required libraries...\n\nThis may take a few minutes. Please wait.")
         progress_msg.setStandardButtons(QtWidgets.QMessageBox.NoButton)
         progress_msg.show()
         QtWidgets.QApplication.processEvents()
@@ -87,29 +84,46 @@ sys.exit(1)
                 f.write(script_content)
             cmd = [exe, script_path]
             
-        # 【核心修复】千万不要加 CREATE_NO_WINDOW，必须让黑框弹出来提供 stdout！
-        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-
-        def _reader():
-            for line in iter(process.stdout.readline, ""):
-                FreeCAD.Console.PrintMessage(line)
-                if not line: break
-            process.stdout.close()
-
-        thread = threading.Thread(target=_reader)
-        thread.daemon = True
-        thread.start()
+        # 【核心修复】隐藏黑框，并将日志写入临时文件，防止 isatty 崩溃
+        log_fd, log_path = tempfile.mkstemp(suffix=".log")
+        log_file = os.fdopen(log_fd, 'w+')
+        
+        kwargs = {}
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            kwargs['startupinfo'] = startupinfo
+            
+        process = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, **kwargs)
 
         timer = QtCore.QTimer()
+        last_pos = 0
         
         def check_process():
+            nonlocal last_pos
+            # 实时读取日志文件的增量内容，打印到 Report View
+            log_file.flush()
+            log_file.seek(last_pos)
+            new_lines = log_file.readlines()
+            if new_lines:
+                for line in new_lines:
+                    FreeCAD.Console.PrintMessage(line)
+                last_pos = log_file.tell()
+                
             if process.poll() is not None:
                 timer.stop()
-                progress_msg.close()
+                log_file.close()
+                
+                # 清理临时文件
                 if script_path and os.path.exists(script_path):
                     try: os.unlink(script_path)
                     except: pass
-                
+                if os.path.exists(log_path):
+                    try: os.unlink(log_path)
+                    except: pass
+                    
+                progress_msg.close()
                 if process.returncode == 0:
                     QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!\nLoading terminal...")
                     on_success_callback()
