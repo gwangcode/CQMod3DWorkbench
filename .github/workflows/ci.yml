@@ -18,7 +18,6 @@ jobs:
       uses: mamba-org/setup-micromamba@v1
       with:
         environment-name: freecad-env
-        # 安装真实的 FreeCAD、CadQuery 以及测试框架
         create-args: >-
           -c conda-forge
           freecad=0.21
@@ -30,18 +29,15 @@ jobs:
     - name: Install cq_mod3d dependency
       shell: micromamba-shell {0}
       run: |
-        # 这是一个 FreeCAD Workbench，不是标准 Python 包，因此不需要 pip install .
-        # 我们只安装它依赖的 cq_mod3d 库
         pip install git+https://github.com/gwangcode/cq_mod3d.git
 
     - name: Run Tests with xvfb (Virtual Display)
       shell: micromamba-shell {0}
       env:
-        # 强制让 pytest 在项目根目录下寻找模块（解决 ModuleNotFoundError: No module named 'utils'）
         PYTHONPATH: ${{ github.workspace }}
-        # 告诉 Qt 运行在无头模式，防止部分环境下的插件报错
         QT_QPA_PLATFORM: offscreen
+        # 关键修复：让 C++ 底层能够找到 FreeCAD 的动态链接库
+        LD_LIBRARY_PATH: ${{ env.CONDA_PREFIX }}/lib
       run: |
-        # FreeCAD 的真实几何计算（如 test_integration.py）极度依赖底层图形库。
-        # 必须使用 xvfb-run 提供一个虚拟屏幕，否则导入 Part 模块时会瞬间崩溃。
+        # 使用 xvfb-run 提供虚拟显示器，确保底层 C++ 初始化时不报错
         xvfb-run -a pytest tests/ -v
