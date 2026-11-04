@@ -4,8 +4,12 @@ import os
 import sys
 import subprocess
 import threading
-# 【关键修复】使用 FreeCAD 官方推荐的兼容导入写法
-from PySide import QtCore, QtGui, QtWidgets 
+
+# 动态判断 FreeCAD 使用的 PySide 版本
+try:
+    from PySide6 import QtCore, QtGui, QtWidgets
+except ImportError:
+    from PySide2 import QtCore, QtGui, QtWidgets
 
 def install_dependencies_async(main_window, on_success_callback):
     progress_msg = QtWidgets.QMessageBox(main_window)
@@ -18,11 +22,7 @@ def install_dependencies_async(main_window, on_success_callback):
     def _install():
         try:
             FreeCAD.Console.PrintMessage("Installing dependencies...\n")
-            cmd = [
-                sys.executable, "-m", "pip", "install",
-                "cadquery",
-                "git+https://github.com/gwangcode/cq_mod3d.git"
-            ]
+            cmd = [sys.executable, "-m", "pip", "install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in iter(process.stdout.readline, ""):
                 FreeCAD.Console.PrintMessage(line)
@@ -37,7 +37,6 @@ def install_dependencies_async(main_window, on_success_callback):
                     on_success_callback()
                 else:
                     QtWidgets.QMessageBox.critical(main_window, "Failed", "Installation failed, please check your network.")
-            
             QtCore.QTimer.singleShot(0, _on_finish)
         except Exception as e:
             FreeCAD.Console.PrintError(f"Installation error: {str(e)}\n")
@@ -49,17 +48,14 @@ def install_dependencies_async(main_window, on_success_callback):
 
 class CQMod3DWorkbench(FreeCADGui.Workbench):
     MenuText = "CQ Mod3D"
-    ToolTip = "Write CadQuery code in an interactive terminal to manipulate FreeCAD Parts"
+    ToolTip = "Interactive CadQuery terminal for FreeCAD"
 
     def Initialize(self):
-        # 【关键修复】使用 FreeCAD API 获取路径，避免 __file__ 未定义
         plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "CQMod3DWorkbench")
         if not os.path.exists(plugin_dir):
             plugin_dir = FreeCAD.getHomePath() + "Mod/CQMod3DWorkbench"
-            
         if plugin_dir not in sys.path:
             sys.path.append(plugin_dir)
-            
         FreeCAD.Console.PrintMessage("🔥 CQ Mod3D Workbench Initialized\n")
 
     def Activated(self):
@@ -71,14 +67,15 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
             has_deps = False
 
         if not has_deps:
-            main_window = FreeCADGui.getMainWindow()
-            reply = QtWidgets.QMessageBox.question(
-                main_window, "Missing Dependencies", 
-                "Missing cq_mod3d and CadQuery.\nDo you want to install them automatically?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            # 局部动态引入，杜绝命名空间未定义问题
+            from PySide6.QtWidgets import QMessageBox
+            reply = QMessageBox.question(
+                FreeCADGui.getMainWindow(), "Missing Dependencies", 
+                "Missing cq_mod3d and CadQuery.\nInstall them automatically?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
-            if reply == QtWidgets.QMessageBox.Yes:
-                install_dependencies_async(main_window, self.Activated)
+            if reply == QMessageBox.StandardButton.Yes:
+                install_dependencies_async(FreeCADGui.getMainWindow(), self.Activated)
             return
 
         try:
@@ -92,7 +89,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
 
         main_window = FreeCADGui.getMainWindow()
         existing_dock = main_window.findChild(QtWidgets.QDockWidget, "CQMod3DTerminalDock")
-        
         if existing_dock:
             existing_dock.show()
             return
