@@ -26,19 +26,19 @@ jobs:
           pytest
           pytest-mock
           cadquery
-          
-    - name: Install Workbench and cq_mod3d
+
+    - name: Install cq_mod3d dependency
       shell: micromamba-shell {0}
       run: |
-        # 安装你本地的工作台代码（非可编辑模式，模拟用户安装）
-        pip install .
-        # 安装 cq_mod3d
+        # 注意：这里不需要 pip install . 因为它是一个 FreeCAD 插件，不是标准 Python 包
+        # 我们只安装它依赖的 cq_mod3d 库
         pip install git+https://github.com/gwangcode/cq_mod3d.git
 
     - name: Run Tests with xvfb (Virtual Display)
       shell: micromamba-shell {0}
       env:
-        # 强制让 pytest 在项目根目录下寻找模块
+        # 强制让 pytest 在项目根目录下寻找模块（解决 ModuleNotFoundError: No module named 'utils'）
         PYTHONPATH: ${{ github.workspace }}
       run: |
+        # FreeCAD 底层强依赖图形库，即使 Mock 了 Gui，也需要 xvfb 虚拟显示器
         xvfb-run -a pytest tests/ -v
