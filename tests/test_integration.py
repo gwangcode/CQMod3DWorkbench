@@ -36,16 +36,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import utils
 
 def test_real_geometry_conversion():
-    """真实测试：CadQuery 导出 -> FreeCAD 读取 -> 验证体积"""
+    """真实测试：CadQuery -> FreeCAD 转换 -> 验证体积"""
     box = cq.Workplane("XY").box(10, 10, 10)
     
     doc = FreeCAD.newDocument("TestDoc")
-    # 关键修复：必须将新建的文档设为活动文档，否则 utils.show 会找不到容器
     FreeCAD.setActiveDocument("TestDoc")
     
     utils.show(box, name="RealBox")
     
-    obj = doc.getObject("RealBox")
+    # 直接从 ActiveDocument 获取对象，防止活动文档漂移
+    obj = FreeCAD.ActiveDocument.getObject("RealBox")
     assert obj is not None, "FreeCAD 中没有找到生成的对象"
     
     vol = obj.Shape.Volume
