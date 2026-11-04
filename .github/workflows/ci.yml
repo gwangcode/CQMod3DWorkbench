@@ -33,11 +33,11 @@ jobs:
 
     - name: Run Tests with xvfb (Virtual Display)
       shell: micromamba-shell {0}
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-        QT_QPA_PLATFORM: offscreen
-        # 关键修复：让 C++ 底层能够找到 FreeCAD 的动态链接库
-        LD_LIBRARY_PATH: ${{ env.CONDA_PREFIX }}/lib
       run: |
-        # 使用 xvfb-run 提供虚拟显示器，确保底层 C++ 初始化时不报错
+        # 动态追加路径，绝不覆盖 Conda 环境自带的环境变量
+        export PYTHONPATH=${{ github.workspace }}:$CONDA_PREFIX/lib/freecad/lib:$CONDA_PREFIX/lib:$PYTHONPATH
+        export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/freecad/lib:$LD_LIBRARY_PATH
+        export QT_QPA_PLATFORM=offscreen
+        
+        # 使用虚拟显示器运行测试
         xvfb-run -a pytest tests/ -v
