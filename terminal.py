@@ -4,7 +4,11 @@ import Part
 import sys
 import traceback
 import codeop
-from PySide import QtCore, QtGui, QtWidgets
+
+try:
+    from PySide6 import QtCore, QtGui, QtWidgets
+except ImportError:
+    from PySide2 import QtCore, QtGui, QtWidgets
 
 try:
     from cq_mod3d import *
@@ -16,13 +20,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
-        
-        self.local_vars = {
-            "App": FreeCAD,
-            "Gui": FreeCADGui,
-            "Part": Part,
-            "show": show
-        }
+        self.local_vars = {"App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show}
         
         self.old_stdout = sys.stdout
         self.old_stderr = sys.stderr
@@ -71,15 +69,13 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 self.insertPlainText(self.prompt)
             else:
                 self.insertPlainText("\n" + self.continuation_prompt)
-                
             self.moveCursor(QtGui.QTextCursor.End)
         else:
             super().keyPressEvent(event)
 
     def execute_code(self, code):
         try:
-            compiled_code = compile(code, "<terminal>", "exec")
-            exec(compiled_code, self.local_vars)
+            exec(compile(code, "<terminal>", "exec"), self.local_vars)
         except Exception:
             self.write(f"{traceback.format_exc()}\n")
             
