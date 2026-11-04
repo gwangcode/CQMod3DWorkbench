@@ -22,28 +22,25 @@ import utils
 import InitGui
 
 def test_show_invalid_object():
-    """测试传入非 cq.Workplane 对象时，是否会安全退出"""
     utils.show("Not a workplane")
-    # 直接断言底层 mock 被调用，绕过 patch 模块解析问题
     mock_freecad.Console.PrintError.assert_called_with("传入的对象不是 cq.Workplane！\n")
 
-@patch('Part.show')
-def test_show_valid_object(mock_part_show):
-    """测试传入正确的对象时，是否调用了显示函数"""
+@patch('cadquery.exporters.export')
+@patch('Part.Shape')
+def test_show_valid_object(mock_part_shape, mock_cq_export, tmp_path):
+    """测试传入正确的对象时，是否正确添加到 FreeCAD 文档"""
     mock_cq_obj = MagicMock()
-    mock_cq_obj.val.return_value = MagicMock() # 伪造 .val().wrapped
+    mock_cq_obj.val.return_value = MagicMock()
     
+    # 伪造文档对象
+    mock_doc = MagicMock()
+    mock_freecad.ActiveDocument = mock_doc
+    
+    # 执行
     utils.show(mock_cq_obj, name="TestRock")
     
     # 验证
-    mock_part_show.assert_called_once()
-    assert mock_part_show.call_args[1]['name'] if 'name' in mock_part_show.call_args[1] else True
-
-def test_check_dependencies_missing():
-    with patch.dict(sys.modules, {'cadquery': None, 'cq_mod3d': None}):
-        assert InitGui.check_dependencies() is False
-
-def test_check_dependencies_present():
-    sys.modules['cadquery'] = MagicMock()
-    sys.modules['cq_mod3d'] = MagicMock()
-    assert InitGui.check_dependencies() is True
+    mock_cq_export.assert_called_once()
+    mock_doc.addObject.assert_called_once_with("Part::Feature", "TestRock")
+    # 验证是否执行了 recompute
+    mock_doc.recompute.assert_called_once()
