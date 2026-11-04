@@ -5,8 +5,7 @@ import sys
 import subprocess
 import threading
 
-# 【核心修复】顶层只导入最安全的 QtCore。
-# QtGui 和 QtWidgets 全部移到 Activated 里面动态导入，避免 FreeCAD 启动时 shiboken 报错崩溃。
+# 顶层只导入最安全的 QtCore，避免 FreeCAD 启动时 shiboken 报错崩溃
 try:
     from PySide6 import QtCore
 except Exception:
@@ -27,29 +26,33 @@ def install_dependencies_async(main_window, on_success_callback):
 
     progress_msg = QtWidgets.QMessageBox(main_window)
     progress_msg.setWindowTitle("Installing Dependencies")
-    progress_msg.setText("First run of CQ Mod3D, auto-installing required Python libraries...\n\nThis may take a few minutes.")
+    progress_msg.setText("First run of CQ Mod3D. Auto-installing required libraries in the background...\n\nThis may take a few minutes, please wait.")
     progress_msg.setStandardButtons(QtWidgets.QMessageBox.NoButton)
     progress_msg.show()
     QtWidgets.QApplication.processEvents()
 
     def _install():
         try:
-            FreeCAD.Console.PrintMessage("Installing dependencies...\n")
+            FreeCAD.Console.PrintMessage("Installing dependencies (cadquery, cq_mod3d)...\n")
             cmd = [sys.executable, "-m", "pip", "install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            
+            # 将 pip 的实时输出打印到 FreeCAD 的 Report view
             for line in iter(process.stdout.readline, ""):
                 FreeCAD.Console.PrintMessage(line)
                 if not line: break
+                
             process.stdout.close()
             return_code = process.wait()
             
             def _on_finish():
                 progress_msg.close()
                 if return_code == 0:
-                    QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!")
-                    on_success_callback()
+                    QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!\nLoading terminal...")
+                    on_success_callback() # 安装成功后，自动重新触发工作台加载
                 else:
-                    QtWidgets.QMessageBox.critical(main_window, "Failed", "Installation failed, please check your network.")
+                    QtWidgets.QMessageBox.critical(main_window, "Failed", "Installation failed. Please check your network and try manual pip install.")
+            
             QtCore.QTimer.singleShot(0, _on_finish)
         except Exception as e:
             FreeCAD.Console.PrintError(f"Installation error: {str(e)}\n")
@@ -72,7 +75,6 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         FreeCAD.Console.PrintMessage("🔥 CQ Mod3D Workbench Initialized\n")
 
     def Activated(self):
-        # 【核心修复】在这里动态获取所有的 Qt UI 组件
         try:
             from PySide6 import QtWidgets
         except Exception:
@@ -88,15 +90,9 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         except ImportError:
             has_deps = False
 
+        # 【核心修改】如果没有依赖，不再弹窗询问，直接自动开始安装
         if not has_deps:
-            # 用局部导入的 QtWidgets 来弹窗
-            reply = QtWidgets.QMessageBox.question(
-                FreeCADGui.getMainWindow(), "Missing Dependencies", 
-                "Missing cq_mod3d and CadQuery.\nInstall them automatically?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
-            )
-            if reply == QtWidgets.QMessageBox.Yes:
-                install_dependencies_async(FreeCADGui.getMainWindow(), self.Activated)
+            install_dependencies_async(FreeCADGui.getMainWindow(), self.Activated)
             return
 
         try:
