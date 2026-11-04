@@ -84,7 +84,6 @@ sys.exit(1)
                 f.write(script_content)
             cmd = [exe, script_path]
             
-        # 【核心修复】隐藏黑框，并将日志写入临时文件，防止 isatty 崩溃
         log_fd, log_path = tempfile.mkstemp(suffix=".log")
         log_file = os.fdopen(log_fd, 'w+')
         
@@ -102,7 +101,6 @@ sys.exit(1)
         
         def check_process():
             nonlocal last_pos
-            # 实时读取日志文件的增量内容，打印到 Report View
             log_file.flush()
             log_file.seek(last_pos)
             new_lines = log_file.readlines()
@@ -115,7 +113,6 @@ sys.exit(1)
                 timer.stop()
                 log_file.close()
                 
-                # 清理临时文件
                 if script_path and os.path.exists(script_path):
                     try: os.unlink(script_path)
                     except: pass
@@ -125,8 +122,9 @@ sys.exit(1)
                     
                 progress_msg.close()
                 if process.returncode == 0:
-                    QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!\nLoading terminal...")
-                    on_success_callback()
+                    # 【核心修复】不再自动调用 on_success_callback，改为提示重启，彻底打破死循环
+                    QtWidgets.QMessageBox.information(main_window, "Installation Complete", 
+                        "Dependencies installed successfully!\n\nPlease RESTART FreeCAD to activate the terminal.")
                 else:
                     QtWidgets.QMessageBox.critical(main_window, "Failed", f"Installation failed (code {process.returncode}).\nPlease check the Report View for details.")
             else:
