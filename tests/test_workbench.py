@@ -1,28 +1,34 @@
 import sys
 import os
 
-# 将项目根目录添加到 sys.path
+# 将项目根目录添加到 sys.path (解决 ModuleNotFoundError: No module named 'utils')
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pytest
 from unittest.mock import MagicMock, patch
-import os
 
 # ==========================================
 # 核心打桩 (Mocking)：在导入任何代码前，
-# 伪造 FreeCAD 和 PySide 模块，防止无头环境崩溃
+# 伪造 FreeCAD, Part 和 PySide 模块，防止无头环境崩溃
 # ==========================================
 mock_freecad = MagicMock()
 mock_freecad_gui = MagicMock()
+mock_part = MagicMock()
 mock_pyside = MagicMock()
 mock_qtgui = MagicMock()
+mock_qtcore = MagicMock()
 
 # 将它们注入 sys.modules
 sys.modules['FreeCAD'] = mock_freecad
 sys.modules['FreeCADGui'] = mock_freecad_gui
+sys.modules['Part'] = mock_part
 sys.modules['PySide'] = mock_pyside
 sys.modules['PySide.QtGui'] = mock_qtgui
-sys.modules['PySide.QtCore'] = MagicMock()
+sys.modules['PySide.QtCore'] = mock_qtcore
+
+# 伪造 cadquery 防止导入报错
+sys.modules['cadquery'] = MagicMock()
+sys.modules['cq_mod3d'] = MagicMock()
 
 # 现在可以安全导入你的模块了
 import utils
