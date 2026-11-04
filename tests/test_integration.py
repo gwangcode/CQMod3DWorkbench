@@ -39,16 +39,20 @@ def test_real_geometry_conversion():
     """真实测试：CadQuery -> FreeCAD 转换 -> 验证体积"""
     box = cq.Workplane("XY").box(10, 10, 10)
     
-    doc = FreeCAD.newDocument("TestDoc")
-    FreeCAD.setActiveDocument("TestDoc")
-    
+    # 清理之前测试可能留下的文档
+    for name in list(FreeCAD.listDocuments().keys()):
+        FreeCAD.closeDocument(name)
+        
     utils.show(box, name="RealBox")
     
-    # 直接从 ActiveDocument 获取对象，防止活动文档漂移
-    obj = FreeCAD.ActiveDocument.getObject("RealBox")
+    # 遍历所有打开的文档，寻找目标对象（无视活动文档状态）
+    obj = None
+    for doc in FreeCAD.listDocuments().values():
+        if doc.getObject("RealBox"):
+            obj = doc.getObject("RealBox")
+            break
+            
     assert obj is not None, "FreeCAD 中没有找到生成的对象"
     
     vol = obj.Shape.Volume
     assert abs(vol - 1000.0) < 1e-3, f"生成的几何体体积错误: {vol}"
-    
-    FreeCAD.closeDocument("TestDoc")
