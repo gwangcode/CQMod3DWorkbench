@@ -15,7 +15,6 @@ except ImportError:
 
 try:
     import cadquery as cq
-    # 引入 cq_mod3d 并同时保留模块名，以便在代码里也能用 m3.xxx
     import cq_mod3d
     from utils import show
 except ImportError as e:
@@ -26,22 +25,42 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
+        # 定义 part() 函数
+        def part(name):
+            doc = FreeCAD.ActiveDocument
+            if not doc:
+                raise ValueError("没有活动的 FreeCAD 文档。")
+            obj = doc.getObject(name)
+            if not obj:
+                raise ValueError(f"找不到名为 '{name}' 的对象。")
+            
+            # 检查是否有几何形状
+            if hasattr(obj, "Shape") and obj.Shape:
+                # 将 FreeCAD 的 Shape 转换为 CadQuery 的 Workplane
+                cq_shape = cq.Shape.cast(obj.Shape.wrapped)
+                return cq.Workplane("XY").newObject([cq_shape])
+            else:
+                raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
+
         # 构建终端执行环境
         self.local_vars = {
             "App": FreeCAD,
             "Gui": FreeCADGui,
             "Part": Part,
             "show": show,
+            "part": part, # 注入 part 函数
             "cq": cq,
-            "m3": cq_mod3d,      # 保留 m3.xxx 的调用方式
-            "cq_mod3d": cq_mod3d # 保留 cq_mod3d.xxx 的调用方式
+            "m3": cq_mod3d,
+            "cq_mod3d": cq_mod3d
         }
         
-        # 【核心改动】等价于在这里执行了 from cq_mod3d import *
+        # 注入 cq_mod3d 所有函数
         if 'cq_mod3d' in sys.modules:
             for name in dir(cq_mod3d):
                 if not name.startswith("_"):
                     self.local_vars[name] = getattr(cq_mod3d, name)
+        
+        self.model_counter = 1
         
         self.old_stdout = sys.stdout
         self.old_stderr = sys.stderr
@@ -96,7 +115,26 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
 
     def execute_code(self, code):
         try:
-            exec(compile(code, "<terminal>", "exec"), self.local_vars)
+            # 尝试单行 eval
+            try:
+                result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
+                
+                if isinstance(result, cq.Workplane):
+                    while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
+                        self.model_counter += 1
+                        
+                    clean_name = f"model_{self.model_counter}"
+                    self.model_counter += 1
+                    
+                    # 注意：这里去掉了 local_vars 的注入，完全依赖 part("名字") 机制
+                    show(result, name=clean_name)
+                    
+                elif result is not None:
+                    self.write(repr(result) + "\n")
+                    
+            except SyntaxError:
+                exec(compile(code, "<terminal>", "exec"), self.local_vars)
+                
         except Exception:
             self.write(f"{traceback.format_exc()}\n")
             
