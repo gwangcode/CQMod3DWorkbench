@@ -32,8 +32,17 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             if not obj: raise ValueError(f"找不到名为 '{name}' 的对象。")
             
             if hasattr(obj, "Shape") and obj.Shape:
-                cq_shape = cq.Shape.cast(obj.Shape.wrapped)
-                return cq.Workplane("XY").newObject([cq_shape])
+                import tempfile, os
+                # 使用临时文件作为中转，100% 兼容所有 FreeCAD 形状类型
+                temp_fd, temp_path = tempfile.mkstemp(suffix=".brep")
+                os.close(temp_fd)
+                try:
+                    obj.Shape.exportBrep(temp_path)
+                    cq_shape = cq.importers.importBrep(temp_path).val()
+                    return cq.Workplane("XY").newObject([cq_shape])
+                finally:
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
             else:
                 raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
 
