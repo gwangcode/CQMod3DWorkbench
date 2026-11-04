@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cq_mod3d_workbench"
+version = "1.0.0"
+description = "FreeCAD Workbench for cq_mod3d"
+requires-python = ">=3.9"
+dependencies = [] # 留空，依赖在 CI 的 Conda 环境里装
