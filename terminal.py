@@ -25,36 +25,29 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
-        # 定义 part() 函数
         def part(name):
             doc = FreeCAD.ActiveDocument
-            if not doc:
-                raise ValueError("没有活动的 FreeCAD 文档。")
+            if not doc: raise ValueError("没有活动的 FreeCAD 文档。")
             obj = doc.getObject(name)
-            if not obj:
-                raise ValueError(f"找不到名为 '{name}' 的对象。")
+            if not obj: raise ValueError(f"找不到名为 '{name}' 的对象。")
             
-            # 检查是否有几何形状
             if hasattr(obj, "Shape") and obj.Shape:
-                # 将 FreeCAD 的 Shape 转换为 CadQuery 的 Workplane
                 cq_shape = cq.Shape.cast(obj.Shape.wrapped)
                 return cq.Workplane("XY").newObject([cq_shape])
             else:
                 raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
 
-        # 构建终端执行环境
         self.local_vars = {
             "App": FreeCAD,
             "Gui": FreeCADGui,
             "Part": Part,
             "show": show,
-            "part": part, # 注入 part 函数
+            "part": part,
             "cq": cq,
             "m3": cq_mod3d,
             "cq_mod3d": cq_mod3d
         }
         
-        # 注入 cq_mod3d 所有函数
         if 'cq_mod3d' in sys.modules:
             for name in dir(cq_mod3d):
                 if not name.startswith("_"):
@@ -126,8 +119,14 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     clean_name = f"model_{self.model_counter}"
                     self.model_counter += 1
                     
-                    # 注意：这里去掉了 local_vars 的注入，完全依赖 part("名字") 机制
-                    show(result, name=clean_name)
+                    # 【核心修复】使用 QTimer 延迟调用 show，把 C++ 计算移出键盘事件栈
+                    def do_show():
+                        try:
+                            show(result, name=clean_name)
+                        except Exception as e:
+                            self.write(f"Show Error: {e}\n")
+                            
+                    QtCore.QTimer.singleShot(10, do_show)
                     
                 elif result is not None:
                     self.write(repr(result) + "\n")
