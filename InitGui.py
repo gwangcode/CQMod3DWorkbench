@@ -5,16 +5,26 @@ import sys
 import subprocess
 import threading
 
-# 【终极兼容】动态判断 FreeCAD 使用的 PySide 版本 (兼容 0.19 到 1.0+)
+# 【核心修复】顶层只导入最安全的 QtCore。
+# QtGui 和 QtWidgets 全部移到 Activated 里面动态导入，避免 FreeCAD 启动时 shiboken 报错崩溃。
 try:
-    from PySide6 import QtCore, QtGui, QtWidgets
-except ImportError:
+    from PySide6 import QtCore
+except Exception:
     try:
-        from PySide2 import QtCore, QtGui, QtWidgets
-    except ImportError:
-        from PySide import QtCore, QtGui, QtWidgets
+        from PySide2 import QtCore
+    except Exception:
+        from PySide import QtCore
 
 def install_dependencies_async(main_window, on_success_callback):
+    # 在函数内部动态导入，此时环境绝对安全
+    try:
+        from PySide6 import QtWidgets
+    except Exception:
+        try:
+            from PySide2 import QtWidgets
+        except Exception:
+            from PySide import QtWidgets
+
     progress_msg = QtWidgets.QMessageBox(main_window)
     progress_msg.setWindowTitle("Installing Dependencies")
     progress_msg.setText("First run of CQ Mod3D, auto-installing required Python libraries...\n\nThis may take a few minutes.")
@@ -62,6 +72,15 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         FreeCAD.Console.PrintMessage("🔥 CQ Mod3D Workbench Initialized\n")
 
     def Activated(self):
+        # 【核心修复】在这里动态获取所有的 Qt UI 组件
+        try:
+            from PySide6 import QtWidgets
+        except Exception:
+            try:
+                from PySide2 import QtWidgets
+            except Exception:
+                from PySide import QtWidgets
+
         try:
             import cadquery
             import cq_mod3d
@@ -70,7 +89,7 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
             has_deps = False
 
         if not has_deps:
-            # 直接使用顶部已经兼容好的 QtWidgets，绝不再硬编码 PySide6
+            # 用局部导入的 QtWidgets 来弹窗
             reply = QtWidgets.QMessageBox.question(
                 FreeCADGui.getMainWindow(), "Missing Dependencies", 
                 "Missing cq_mod3d and CadQuery.\nInstall them automatically?",
@@ -102,6 +121,14 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         main_window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.dock)
 
     def Deactivated(self):
+        try:
+            from PySide6 import QtWidgets
+        except Exception:
+            try:
+                from PySide2 import QtWidgets
+            except Exception:
+                from PySide import QtWidgets
+                
         main_window = FreeCADGui.getMainWindow()
         dock = main_window.findChild(QtWidgets.QDockWidget, "CQMod3DTerminalDock")
         if dock:
