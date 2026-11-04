@@ -6,14 +6,7 @@ import subprocess
 import threading
 from PySide import QtGui, QtCore
 
-def check_dependencies():
-    try:
-        import cadquery
-        import cq_mod3d
-        return True
-    except ImportError:
-        return False
-
+# 后台安装任务
 def install_dependencies_async(main_window, on_success_callback):
     progress_msg = QtGui.QMessageBox(main_window)
     progress_msg.setWindowTitle("正在安装依赖")
@@ -41,7 +34,6 @@ def install_dependencies_async(main_window, on_success_callback):
                 progress_msg.close()
                 if return_code == 0:
                     QtGui.QMessageBox.information(main_window, "安装成功", "依赖安装成功！")
-                    # 安装成功后，直接触发回调重新加载工作台
                     on_success_callback()
                 else:
                     QtGui.QMessageBox.critical(main_window, "安装失败", "自动安装失败，请检查网络。")
@@ -60,9 +52,25 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
     MenuText = "CQ Mod3D"
     ToolTip = "在终端中直接使用 cq_mod3d 编写代码操作 FreeCAD Part"
 
+    def Initialize(self):
+        """FreeCAD 加载工作台时调用的方法"""
+        # 确保插件目录在 sys.path 中，防止找不到 terminal.py 和 utils.py
+        plugin_dir = os.path.dirname(__file__)
+        if plugin_dir not in sys.path:
+            sys.path.append(plugin_dir)
+        FreeCAD.Console.PrintMessage("CQ Mod3D 工作台初始化完成。\n")
+
     def Activated(self):
-        # 实时检查依赖（不再依赖 Initialize 时的状态）
-        if not check_dependencies():
+        """用户点击工作台切换时调用的方法"""
+        # 内联依赖检查逻辑，解决 name 'check_dependencies' is not defined 的错误
+        try:
+            import cadquery
+            import cq_mod3d
+            has_deps = True
+        except ImportError:
+            has_deps = False
+
+        if not has_deps:
             main_window = FreeCADGui.getMainWindow()
             reply = QtGui.QMessageBox.question(
                 main_window, "缺少依赖", 
@@ -70,13 +78,11 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
                 QtGui.QMessageBox.Yes | QtGui.QMessageBox.No
             )
             if reply == QtGui.QMessageBox.Yes:
-                # 传入回调函数，安装成功后自动再次调用 Activated 尝试加载
                 install_dependencies_async(main_window, self.Activated)
             return
 
         # 加载终端面板
         try:
-            # 强制重新加载模块，确保安装后立即生效
             if 'terminal' in sys.modules:
                 import importlib
                 importlib.reload(sys.modules['terminal'])
