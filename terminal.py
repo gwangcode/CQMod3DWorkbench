@@ -25,33 +25,15 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
-        def part(name):
-            doc = FreeCAD.ActiveDocument
-            if not doc: raise ValueError("没有活动的 FreeCAD 文档。")
-            obj = doc.getObject(name)
-            if not obj: raise ValueError(f"找不到名为 '{name}' 的对象。")
-            
-            if hasattr(obj, "Shape") and obj.Shape:
-                import tempfile, os
-                # 使用临时文件作为中转，100% 兼容所有 FreeCAD 形状类型
-                temp_fd, temp_path = tempfile.mkstemp(suffix=".brep")
-                os.close(temp_fd)
-                try:
-                    obj.Shape.exportBrep(temp_path)
-                    cq_shape = cq.importers.importBrep(temp_path).val()
-                    return cq.Workplane("XY").newObject([cq_shape])
-                finally:
-                    if os.path.exists(temp_path):
-                        os.unlink(temp_path)
-            else:
-                raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
-
+        # 用于记录被 part() 读取的对象的原名
+        self._current_target = None
+        
         self.local_vars = {
             "App": FreeCAD,
             "Gui": FreeCADGui,
             "Part": Part,
             "show": show,
-            "part": part,
+            "part": self._part_func, # 绑定到类方法
             "cq": cq,
             "m3": cq_mod3d,
             "cq_mod3d": cq_mod3d
@@ -75,6 +57,33 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         
         self.insertPlainText(self.prompt)
         self.moveCursor(QtGui.QTextCursor.End)
+
+    def _part_func(self, name):
+        """从 FreeCAD 获取对象，并记录下我们正在操作这个名字"""
+        doc = FreeCAD.ActiveDocument
+        if not doc: 
+            raise ValueError("没有活动的 FreeCAD 文档。")
+        obj = doc.getObject(name)
+        if not obj: 
+            raise ValueError(f"找不到名为 '{name}' 的对象。")
+        
+        if hasattr(obj, "Shape") and obj.Shape:
+            import tempfile, os
+            temp_fd, temp_path = tempfile.mkstemp(suffix=".brep")
+            os.close(temp_fd)
+            try:
+                obj.Shape.exportBrep(temp_path)
+                cq_shape = cq.importers.importBrep(temp_path).val()
+                
+                # 【核心魔法】在这里记下：用户正在引用它
+                self._current_target = name 
+                
+                return cq.Workplane("XY").newObject([cq_shape])
+            finally:
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+        else:
+            raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
 
     def write(self, text):
         try:
@@ -116,19 +125,28 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             super().keyPressEvent(event)
 
     def execute_code(self, code):
+        # 每次执行前，清空目标记录
+        self._current_target = None 
+        
         try:
-            # 尝试单行 eval
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 
                 if isinstance(result, cq.Workplane):
-                    while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
-                        self.model_counter += 1
-                        
-                    clean_name = f"model_{self.model_counter}"
-                    self.model_counter += 1
+                    # 检查 _part_func 是否被调用过并留下了记录
+                    target_name = self._current_target 
                     
-                    # 【核心修复】使用 QTimer 延迟调用 show，把 C++ 计算移出键盘事件栈
+                    if target_name and FreeCAD.ActiveDocument.getObject(target_name):
+                        # 覆盖模式：把之前的删掉，用原名建新的
+                        FreeCAD.ActiveDocument.removeObject(target_name)
+                        clean_name = target_name
+                    else:
+                        # 全新模式：自动生成 model_x
+                        while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
+                            self.model_counter += 1
+                        clean_name = f"model_{self.model_counter}"
+                        self.model_counter += 1
+                    
                     def do_show():
                         try:
                             show(result, name=clean_name)
