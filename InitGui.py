@@ -5,11 +5,14 @@ import sys
 import subprocess
 import threading
 
-# 动态判断 FreeCAD 使用的 PySide 版本
+# 【终极兼容】动态判断 FreeCAD 使用的 PySide 版本 (兼容 0.19 到 1.0+)
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
 except ImportError:
-    from PySide2 import QtCore, QtGui, QtWidgets
+    try:
+        from PySide2 import QtCore, QtGui, QtWidgets
+    except ImportError:
+        from PySide import QtCore, QtGui, QtWidgets
 
 def install_dependencies_async(main_window, on_success_callback):
     progress_msg = QtWidgets.QMessageBox(main_window)
@@ -67,14 +70,13 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
             has_deps = False
 
         if not has_deps:
-            # 局部动态引入，杜绝命名空间未定义问题
-            from PySide6.QtWidgets import QMessageBox
-            reply = QMessageBox.question(
+            # 直接使用顶部已经兼容好的 QtWidgets，绝不再硬编码 PySide6
+            reply = QtWidgets.QMessageBox.question(
                 FreeCADGui.getMainWindow(), "Missing Dependencies", 
                 "Missing cq_mod3d and CadQuery.\nInstall them automatically?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
             )
-            if reply == QMessageBox.StandardButton.Yes:
+            if reply == QtWidgets.QMessageBox.Yes:
                 install_dependencies_async(FreeCADGui.getMainWindow(), self.Activated)
             return
 
