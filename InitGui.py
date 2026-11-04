@@ -1,11 +1,7 @@
 import FreeCAD
 import FreeCADGui
-import os
-import sys
-import subprocess
-import threading
 
-# 顶层只导入最安全的 QtCore，避免 FreeCAD 启动时 shiboken 报错崩溃
+# 顶层只保留绝对安全的 FreeCAD 导入，其余全部下放
 try:
     from PySide6 import QtCore
 except Exception:
@@ -20,6 +16,10 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
     ToolTip = "Interactive CadQuery terminal for FreeCAD"
 
     def Initialize(self):
+        # 在内部导入，防止命名空间污染
+        import os
+        import sys
+        
         plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "CQMod3DWorkbench")
         if not os.path.exists(plugin_dir):
             plugin_dir = FreeCAD.getHomePath() + "Mod/CQMod3DWorkbench"
@@ -28,7 +28,12 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         FreeCAD.Console.PrintMessage("🔥 CQ Mod3D Workbench Initialized\n")
 
     def install_dependencies_async(self, main_window, on_success_callback):
-        # 在函数内部动态导入，此时环境绝对安全
+        # 把安装依赖需要的所有东西全部在内部导入
+        import os
+        import sys
+        import subprocess
+        import threading
+        
         try:
             from PySide6 import QtWidgets
         except Exception:
@@ -64,7 +69,7 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
                         QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!\nLoading terminal...")
                         on_success_callback() # 安装成功后，自动重新触发工作台加载
                     else:
-                        QtWidgets.QMessageBox.critical(main_window, "Failed", "Installation failed. Please check your network and try manual pip install.")
+                        QtWidgets.QMessageBox.critical(main_window, "Failed", "Installation failed. Please check your network.")
                 
                 QtCore.QTimer.singleShot(0, _on_finish)
             except Exception as e:
@@ -97,6 +102,7 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
             return
 
         try:
+            import sys
             if 'terminal' in sys.modules:
                 import importlib
                 importlib.reload(sys.modules['terminal'])
