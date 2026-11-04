@@ -1,26 +1,38 @@
+import os
+import tempfile
 import FreeCAD
 import Part
 
 def show(cq_obj, name="CQ_Object"):
     """将 CadQuery Workplane 对象转换为 FreeCAD 实体并显示在视图中。"""
     if not hasattr(cq_obj, "val"):
-        print("传入的对象不是 cq.Workplane！")
+        FreeCAD.Console.PrintError("传入的对象不是 cq.Workplane！\n")
         return
         
-    # 不使用 try-except 吞错误，让异常直接抛出，方便 CI 排查
-    import cadquery as cq
+    temp_brep = tempfile.NamedTemporaryFile(suffix=".brep", delete=False)
+    temp_brep_path = temp_brep.name
+    temp_brep.close()
     
-    # 直接获取 OCC 底层拓扑结构，绕过临时文件读写，速度最快且最稳定
-    occ_shape = cq_obj.val().wrapped
-    shape = Part.Shape(occ_shape)
-    
-    # 获取或创建文档
-    doc = FreeCAD.ActiveDocument
-    if not doc:
-        doc = FreeCAD.newDocument()
+    try:
+        import cadquery as cq
+        # 使用临时文件传递，避免跨 OCC 库版本的内存强转导致段错误 (Segfault)
+        cq.exporters.export(cq_obj, temp_brep_path, "BREP")
         
-    obj = doc.addObject("Part::Feature", name)
-    obj.Shape = shape
-    doc.recompute()
-    
-    print(f"✅ 已生成 FreeCAD 对象: {name}")
+        shape = Part.Shape()
+        shape.read(temp_brep_path)
+        
+        doc = FreeCAD.ActiveDocument
+        if not doc:
+            doc = FreeCAD.newDocument()
+            
+        # 使用 addObject 代替 Part.show()，杜绝无头环境下的 ViewObject 刷新崩溃
+        obj = doc.addObject("Part::Feature", name)
+        obj.Shape = shape
+        doc.recompute()
+        
+        FreeCAD.Console.PrintMessage(f"✅ 已生成 FreeCAD 对象: {name}\n")
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"❌ 生成失败: {str(e)}\n")
+    finally:
+        if os.path.exists(temp_brep_path):
+            os.unlink(temp_brep_path)
