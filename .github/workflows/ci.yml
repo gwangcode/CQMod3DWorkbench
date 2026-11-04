@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Micromamba (Conda)
+      uses: mamba-org/setup-micromamba@v1
+      with:
+        environment-name: freecad-env
+        # 使用 conda-forge 安装 FreeCAD, Python 3.11, 以及测试依赖
+        create-args: >-
+          -c conda-forge
+          freecad=0.21
+          python=3.11
+          pytest
+          pytest-mock
+          cadquery
+          
+    - name: Install Workbench and cq_mod3d
+      shell: micromamba-shell {0}
+      run: |
+        # 安装你本地的工作台代码（非可编辑模式，模拟用户安装）
+        pip install .
+        # 安装 cq_mod3d
+        pip install git+https://github.com/gwangcode/cq_mod3d.git
+
+    - name: Run Tests with xvfb (Virtual Display)
+      shell: micromamba-shell {0}
+      run: |
+        # FreeCAD 强依赖图形库，即使 Mock 了 Gui，底层 C++ 还是需要动态链接库。
+        # 使用 xvfb-run 创建一个虚拟显示器来欺骗 FreeCAD
+        xvfb-run -a pytest tests/ -v
