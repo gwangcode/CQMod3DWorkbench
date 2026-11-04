@@ -37,7 +37,8 @@ jobs:
 
     - name: Run Tests with xvfb (Virtual Display)
       shell: micromamba-shell {0}
+      env:
+        # 强制让 pytest 在项目根目录下寻找模块
+        PYTHONPATH: ${{ github.workspace }}
       run: |
-        # FreeCAD 强依赖图形库，即使 Mock 了 Gui，底层 C++ 还是需要动态链接库。
-        # 使用 xvfb-run 创建一个虚拟显示器来欺骗 FreeCAD
         xvfb-run -a pytest tests/ -v
