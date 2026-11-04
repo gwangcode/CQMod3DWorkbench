@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+    <name>CQ Mod3D</name>
+    <description>Write Python code in a terminal within FreeCAD to manipulate Parts using cq_mod3d</description>
+    <version>1.0.0</version>
+    <date>2026-11-04</date>
+    
+    <maintainer>
+        <name>Gang Wang</name>
+        <url>https://github.com/gwangcode</url>
+    </maintainer>
+    
+    <author>
+        <name>Gang Wang</name>
+    </author>
+    
+    <license file="LICENSE">MIT</license>
+    
+    <url type="repository" branch="main">https://github.com/gwangcode/CQMod3DWorkbench</url>
+    
+    <content>
+        <workbench>
+            <classname>CQMod3DWorkbench</classname>
+            <!-- If you use Option B, uncomment the line below -->
+            <!-- <subdirectory>./CQMod3DWorkbench</subdirectory> -->
+        </workbench>
+    </content>
+
+    <depend type="python" name="cadquery" optional="false"/>
+    <depend type="python" name="cq_mod3d" optional="false"/>
+</package>
