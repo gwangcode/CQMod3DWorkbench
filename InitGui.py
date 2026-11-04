@@ -20,20 +20,30 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         import sys
         exe = sys.executable
         if "FreeCAD" in os.path.basename(exe):
-            candidates = [
-                os.path.join(os.path.dirname(exe), "python.exe"),
-                os.path.join(os.path.dirname(exe), "bin", "python.exe"),
-                os.path.join(sys.prefix, "bin", "python.exe"),
-                os.path.join(sys.prefix, "python.exe")
-            ]
-            for c in candidates:
-                if os.path.exists(c):
-                    return c
-        return exe
+            base_dir = os.path.dirname(exe)
+            # 1. 优先找同目录或上级目录的 python.exe
+            for name in ["python.exe", "pythonw.exe"]:
+                candidates = [
+                    os.path.join(base_dir, name),
+                    os.path.join(os.path.dirname(base_dir), name),
+                    os.path.join(os.path.dirname(base_dir), "bin", name)
+                ]
+                for c in candidates:
+                    if os.path.exists(c):
+                        return c, True
+            # 2. 找不到 python.exe，退而求其次找 freecadcmd.exe
+            cmd_exe = os.path.join(base_dir, "freecadcmd.exe")
+            if os.path.exists(cmd_exe):
+                return cmd_exe, False
+        # 3. 兜底
+        return exe, False
 
     def install_dependencies_async(self, main_window, on_success_callback):
         import subprocess
         import threading
+        import tempfile
+        import os
+        import sys
         
         try:
             from PySide6 import QtWidgets, QtCore
@@ -50,18 +60,40 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         progress_msg.show()
         QtWidgets.QApplication.processEvents()
 
-        python_exe = self._get_python_exe()
-        FreeCAD.Console.PrintMessage(f"Using Python interpreter: {python_exe}\n")
+        exe, is_python = self._get_python_exe()
+        FreeCAD.Console.PrintMessage(f"Using interpreter: {exe}\n")
         
-        cmd = [python_exe, "-m", "pip", "install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]
-        
+        script_path = None
+        if is_python:
+            # 如果是原生 python.exe，直接跑 -m pip
+            cmd = [exe, "-m", "pip", "install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]
+        else:
+            # 如果是 freecadcmd.exe，生成临时脚本让它执行
+            script_content = """
+import sys
+try:
+    from pip._internal.cli.main import main as pip_main
+    sys.exit(pip_main(["install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]))
+except ImportError:
+    try:
+        import pip
+        if hasattr(pip, 'main'):
+            sys.exit(pip.main(["install", "cadquery", "git+https://github.com/gwangcode/cq_mod3d.git"]))
+    except:
+        pass
+sys.exit(1)
+"""
+            temp_fd, script_path = tempfile.mkstemp(suffix=".py")
+            with os.fdopen(temp_fd, 'w') as f:
+                f.write(script_content)
+            cmd = [exe, script_path]
+            
         kwargs = {}
         if hasattr(subprocess, 'CREATE_NO_WINDOW'):
             kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
             
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **kwargs)
 
-        # 用子线程去读 pip 的输出（这个子线程不碰 UI，所以是安全的）
         def _reader():
             for line in iter(process.stdout.readline, ""):
                 FreeCAD.Console.PrintMessage(line)
@@ -72,20 +104,24 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
         thread.daemon = True
         thread.start()
 
-        # 在主线程用 QTimer 轮询进程状态（完全符合 Qt 的规则）
         timer = QtCore.QTimer()
         
         def check_process():
             if process.poll() is not None:
                 timer.stop()
                 progress_msg.close()
+                if script_path and os.path.exists(script_path):
+                    try:
+                        os.unlink(script_path)
+                    except:
+                        pass
+                
                 if process.returncode == 0:
                     QtWidgets.QMessageBox.information(main_window, "Success", "Dependencies installed successfully!\nLoading terminal...")
                     on_success_callback()
                 else:
-                    QtWidgets.QMessageBox.critical(main_window, "Failed", "Installation failed. Please check network.")
+                    QtWidgets.QMessageBox.critical(main_window, "Failed", f"Installation failed (code {process.returncode}).\nPlease check the Report View for details.")
             else:
-                # 让进度条保持呼吸
                 QtWidgets.QApplication.processEvents()
 
         timer.timeout.connect(check_process)
