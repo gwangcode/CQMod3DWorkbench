@@ -54,15 +54,21 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
 
     def Initialize(self):
         """FreeCAD 加载工作台时调用的方法"""
-        # 确保插件目录在 sys.path 中，防止找不到 terminal.py 和 utils.py
-        plugin_dir = os.path.dirname(__file__)
+        # 核心修复：不用 __file__，直接用 FreeCAD 的 API 获取插件目录
+        plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "CQMod3DWorkbench")
+        
+        # 兼容部分旧版本或非默认安装路径（做个双重保险）
+        if not os.path.exists(plugin_dir):
+            plugin_dir = FreeCAD.getHomePath() + "Mod/CQMod3DWorkbench"
+            
         if plugin_dir not in sys.path:
             sys.path.append(plugin_dir)
-        FreeCAD.Console.PrintMessage("CQ Mod3D 工作台初始化完成。\n")
+            
+        FreeCAD.Console.PrintMessage("🔥 CQ Mod3D 最新版代码加载成功！\n")
 
     def Activated(self):
         """用户点击工作台切换时调用的方法"""
-        # 内联依赖检查逻辑，解决 name 'check_dependencies' is not defined 的错误
+        # 内联依赖检查
         try:
             import cadquery
             import cq_mod3d
@@ -99,7 +105,7 @@ class CQMod3DWorkbench(FreeCADGui.Workbench):
             return
 
         self.terminal = PythonTerminal()
-        self.dock = QtGui.QDockWidget("CQ Mod3D 终端", main_window)
+        self.dock = QtGui.QDockWidget("CQ Mod 3D 终端", main_window)
         self.dock.setObjectName("CQMod3DTerminalDock")
         self.dock.setWidget(self.terminal)
         
