@@ -1,8 +1,22 @@
 import sys
 import os
+
+# --- 动态探测 FreeCAD 的路径并加入 sys.path ---
+if 'CONDA_PREFIX' in os.environ:
+    prefix = os.environ['CONDA_PREFIX']
+    # 寻找 FreeCAD.so 或 FreeCAD.py
+    freecad_lib = os.path.join(prefix, 'lib', 'freecad', 'lib')
+    if os.path.exists(freecad_lib) and freecad_lib not in sys.path:
+        sys.path.append(freecad_lib)
+    # 寻找 site-packages
+    site_packages = os.path.join(prefix, 'lib', 'python3.11', 'site-packages')
+    if os.path.exists(site_packages) and site_packages not in sys.path:
+        sys.path.append(site_packages)
+
 import FreeCAD
 import Part
 import cadquery as cq
+
 # 导入你的真实工具
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import utils
