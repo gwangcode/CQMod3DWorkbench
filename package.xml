@@ -24,7 +24,6 @@
         </workbench>
     </content>
 
-    <!-- 纯 FreeCAD 模式下，仅需这些轻量级计算库 -->
     <depend type="python" name="numpy" optional="false"/>
     <depend type="python" name="scipy" optional="false"/>
     <depend type="python" name="trimesh" optional="false"/>
