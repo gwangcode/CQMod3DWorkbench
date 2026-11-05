@@ -27,11 +27,17 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
-        # 【核心修复】禁用自动换行，使用水平滚动条（符合标准终端体验）
+        # 禁用自动换行，使用水平滚动条
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         
         self._consumed_targets = []
         self.model_counter = 1
+
+        # ==========================================
+        # 【新增】历史记录相关属性
+        # ==========================================
+        self.history = []
+        self.history_index = 0
 
         self.local_vars = {
             "App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show,
@@ -169,6 +175,27 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             pass
 
     def keyPressEvent(self, event):
+        # ==========================================
+        # 【新增】处理上/下方向键，调取历史命令
+        # ==========================================
+        if event.key() == QtCore.Qt.Key_Up:
+            if self.history and not self.buffer: # 只有在单行状态下且历史不为空才生效
+                if self.history_index > 0:
+                    self.history_index -= 1
+                self._replace_current_line(self.history[self.history_index])
+            return
+
+        elif event.key() == QtCore.Qt.Key_Down:
+            if self.history and not self.buffer:
+                if self.history_index < len(self.history) - 1:
+                    self.history_index += 1
+                    self._replace_current_line(self.history[self.history_index])
+                else:
+                    self.history_index = len(self.history)
+                    self._replace_current_line("") # 回到底部，清空输入
+            return
+
+        # 处理回车
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
             cursor = self.textCursor()
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
@@ -192,7 +219,13 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             if is_complete:
                 self.insertPlainText("\n")
                 if full_code.strip(): 
+                    # 【新增】将完整的非空命令存入历史，并重置指针
+                    if full_code.strip() not in self.history: # 简单的去重
+                        self.history.append(full_code.strip())
+                    self.history_index = len(self.history)
+                    
                     self.execute_code(full_code)
+                
                 self.buffer.clear()
                 self.insertPlainText(self.prompt)
             else:
@@ -200,6 +233,17 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.moveCursor(QtGui.QTextCursor.End)
         else:
             super().keyPressEvent(event)
+
+    def _replace_current_line(self, text):
+        """辅助方法：将当前光标所在行的输入替换为指定的文本"""
+        cursor = self.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.StartOfLine)
+        # 跳过提示符 (>>> 或 ...)
+        cursor.movePosition(QtGui.QTextCursor.Right, n=4) 
+        cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        cursor.insertText(text)
+        self.moveCursor(QtGui.QTextCursor.End)
 
     def execute_code(self, code):
         self._consumed_targets = []
