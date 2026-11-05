@@ -12,13 +12,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 
 - **🚀 Zero-Configuration & Blazing Fast**: No external CAD kernels (like CadQuery or OCP) to download. The terminal opens instantly.
 - **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs and beautiful traceback error reporting.
-- **⚡ Operator Overloading Magic**: Directly use math-like operators on FreeCAD shapes:
-  - `shape + [x, y, z]` for fast translation.
-  - `shape1 + shape2` for Boolean union (fuse).
-  - `shape1 - shape2` for Boolean cut.
-  - `shape1 * shape2` for Boolean intersection.
-  - `shape @ [rx, ry, rz]` for rotation.
-  - `shape ^ [ax, ay, az]` for twisting.
+- **⚡ Operator Overloading Magic**: Directly use Python's math operators on FreeCAD shapes for rapid boolean operations, transformations, and deformations.
 - **🔄 Non-Destructive Parametric Modeling**: All boolean operations and deformations preserve your original models. It automatically generates native FreeCAD nodes (e.g., `Fusion`, `Cut`, `Noise`, `Twist`) and hides the source objects. You can delete the new node at any time to recover the originals!
 - **🧠 Real-Time Updates**: Because we generate native parametric nodes, modifying a base object (like changing a sphere's radius) will automatically cascade and update all downstream boolean or noise operations.
 - **🪨 Procedural Noise**: Apply natural, rocky, or organic textures to regular geometries with a simple function call.
@@ -93,6 +87,27 @@ apply_noise(part("model_1"), density=0.6, smoothness=1.5, amplitude=0.4)
 # If you drew a sketch and padded it named "BasePad", you can grab it like this:
 part("BasePad") - sphere(5)
 ```
+
+---
+
+## ⚡ Operator Overloading Cheatsheet
+
+Once a shape is created or retrieved via `part("name")`, you can use the following operators:
+
+| Operator | Syntax Example | Operation | Effect on Tree / History |
+| :--- | :--- | :--- | :--- |
+| `+` | `shape + [x, y, z]` | **Translate (Positive)** | In-place update (Modifies Placement) |
+| `+` | `shape1 + shape2` | **Boolean Union (Fuse)** | Non-destructive (Creates `Fusion` node) |
+| `-` | `shape - [x, y, z]` | **Translate (Negative)** | In-place update (Modifies Placement) |
+| `-` | `shape1 - shape2` | **Boolean Cut** | Non-destructive (Creates `Cut` node) |
+| `*` | `shape * 2.0` | **Uniform Scale** | Generates new static feature |
+| `*` | `shape * [2, 1, 0.5]` | **Non-uniform Scale** | Generates new static feature |
+| `*` | `shape1 * shape2` | **Boolean Intersection** | Non-destructive (Creates `Common` node) |
+| `@` | `shape @ [rx, ry, rz]` | **Rotation** (Radians) | In-place update (Modifies Placement) |
+| `%` | `shape % [sxy, sxz, syx, syz, szx, szy]` | **Shear Transformation** | Generates new static feature |
+| `^` | `shape ^ [ax, ay, az]` | **Twist** (Radians per unit) | Non-destructive (Creates `Twist` node) |
+
+---
 
 ## ⚙️ How it works
 
