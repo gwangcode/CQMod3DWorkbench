@@ -59,7 +59,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def _part_func(self, name):
-        """从文档获取 Part.Shape，并记录，用于覆盖或计算"""
         doc = FreeCAD.ActiveDocument
         if not doc: 
             raise ValueError("没有活动的 FreeCAD 文档。")
@@ -69,9 +68,22 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         
         if hasattr(obj, "Shape") and obj.Shape:
             self._consumed_targets.append(name)
-            return obj.Shape  # 直接返回原生 Shape，速度极快
+            # 返回 Shape 代理类
+            import mod3d
+            return mod3d.Shape(obj.Shape)  
         else:
             raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
+
+    def _show_func(self, shape, name=None):
+        # 解包代理类
+        import mod3d
+        if isinstance(shape, mod3d.Shape):
+            shape = shape.shape
+            
+        if not isinstance(shape, Part.Shape):
+            self.write("Error: 只能 show 一个 Part.Shape 对象！\n")
+            return None
+        # ... 后面原有代码不变
 
     def write(self, text):
         try:
