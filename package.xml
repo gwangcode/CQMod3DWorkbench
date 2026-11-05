@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
-    <name>CQ Mod3D</name>
-    <description>Write Python code in a terminal within FreeCAD to manipulate Parts using cq_mod3d</description>
-    <version>1.0.0</version>
-    <date>2026-11-04</date>
+    <name>Mod3D Workbench</name>
+    <description>Interactive FreeCAD Python Terminal for Mod3D geometry generation and manipulation</description>
+    <version>1.1.0</version>
+    <date>2024-05-20</date>
     
     <maintainer>
         <name>Gang Wang</name>
@@ -16,16 +16,17 @@
     
     <license file="LICENSE">MIT</license>
     
-    <url type="repository" branch="main">https://github.com/gwangcode/CQMod3DWorkbench</url>
+    <url type="repository" branch="main">https://github.com/gwangcode/Mod3DWorkbench</url>
     
     <content>
         <workbench>
-            <classname>CQMod3DWorkbench</classname>
-            <!-- If you use Option B, uncomment the line below -->
-            <!-- <subdirectory>./CQMod3DWorkbench</subdirectory> -->
+            <classname>Mod3DWorkbench</classname>
         </workbench>
     </content>
 
-    <depend type="python" name="cadquery" optional="false"/>
-    <depend type="python" name="cq_mod3d" optional="false"/>
+    <!-- 纯 FreeCAD 模式下，仅需这些轻量级计算库 -->
+    <depend type="python" name="numpy" optional="false"/>
+    <depend type="python" name="scipy" optional="false"/>
+    <depend type="python" name="trimesh" optional="false"/>
+    <depend type="python" name="shapely" optional="false"/>
 </package>
