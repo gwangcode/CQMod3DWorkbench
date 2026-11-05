@@ -213,9 +213,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def keyPressEvent(self, event):
-        # ==========================================
-        # 【核心修复】拦截光标移动与退格，保护提示符
-        # ==========================================
+        # 拦截光标移动与退格，保护提示符
         cursor = self.textCursor()
         block = cursor.block()
         line_text = block.text()
@@ -226,19 +224,16 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         elif line_text.startswith("... "): prompt_len = 4
 
         if prompt_len > 0:
-            # 1. 拦截 Home 键
             if event.key() == QtCore.Qt.Key_Home and not event.modifiers():
                 cursor.clearSelection()
                 cursor.setPosition(block.position() + prompt_len)
                 self.setTextCursor(cursor)
                 return
 
-            # 2. 拦截 左/右 方向键，防止光标或选区跨越提示符
             if event.key() in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right):
                 if cursor.hasSelection():
                     sel_start = cursor.selectionStart()
                     sel_end = cursor.selectionEnd()
-                    # 如果选区越过了提示符边界，强行将其推回边界
                     if event.key() == QtCore.Qt.Key_Left and sel_start <= block.position() + prompt_len:
                         cursor.setPosition(block.position() + prompt_len, QtGui.QTextCursor.MoveAnchor)
                         cursor.setPosition(sel_end, QtGui.QTextCursor.KeepAnchor)
@@ -250,23 +245,17 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                         self.setTextCursor(cursor)
                         return
                 else:
-                    # 无选区时，光标不能退到提示符左侧
                     if event.key() == QtCore.Qt.Key_Left and pos_in_block <= prompt_len:
                         return
 
-            # 3. 拦截 Backspace 键
             if event.key() == QtCore.Qt.Key_Backspace:
                 if not cursor.hasSelection() and pos_in_block <= prompt_len:
                     return
                 if cursor.hasSelection() and cursor.selectionStart() <= block.position() + prompt_len:
-                    # 如果选区覆盖了提示符，只删除后面的部分
                     cursor.setPosition(block.position() + prompt_len, QtGui.QTextCursor.MoveAnchor)
                     self.setTextCursor(cursor)
                     return
 
-        # ==========================================
-        # 其他快捷键逻辑保持不变
-        # ==========================================
         if event.key() == QtCore.Qt.Key_U and event.modifiers() == QtCore.Qt.ControlModifier:
             self._clear_current_line()
             return
@@ -296,8 +285,16 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self._replace_current_line("")
             return
 
+        # ==========================================
+        # 【核心修复】Enter / Shift+Enter 处理
+        # ==========================================
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+            # 1. 强制将光标移动到当前行的行尾，防止换行符插在中间
             cursor = self.textCursor()
+            cursor.movePosition(QtGui.QTextCursor.EndOfLine)
+            self.setTextCursor(cursor)
+
+            # 2. 提取整行代码
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
             code_line = cursor.selectedText()
@@ -311,13 +308,19 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
 
+            # 3. 判断执行逻辑
             is_complete = False
-            try: 
-                if codeop.compile_command(full_code, "<input>", "exec") is not None:
-                    if self._is_brackets_balanced(full_code):
-                        is_complete = True
-            except (SyntaxError, ValueError): 
-                is_complete = True
+            if event.modifiers() == QtCore.Qt.ShiftModifier:
+                # 如果按了 Shift+Enter，强制进入续行模式
+                is_complete = False
+            else:
+                # 否则判断是否完整
+                try: 
+                    if codeop.compile_command(full_code, "<input>", "exec") is not None:
+                        if self._is_brackets_balanced(full_code):
+                            is_complete = True
+                except (SyntaxError, ValueError): 
+                    is_complete = True
 
             if is_complete:
                 self.insertPlainText("\n")
@@ -331,6 +334,8 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 self.insertPlainText(self.prompt)
             else:
                 self.insertPlainText("\n" + self.continuation_prompt)
+                
+            # 确保插入后光标在最后
             self.moveCursor(QtGui.QTextCursor.End)
         else:
             super().keyPressEvent(event)
