@@ -17,6 +17,7 @@ except ImportError:
 
 try:
     import mod3d
+    from mod3d.shapes import Shape2d
     from mod3d.parametric import NoiseFeature, ViewProviderNoise, TwistFeature, ViewProviderTwist
     from utils import show
 except ImportError as e:
@@ -321,7 +322,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.execute_code(full_code)
                 
                 self.buffer.clear()
-                # 如果执行了 clear 命令，execute_code 内部会处理提示符，这里防止重复插入
                 if full_code.strip() not in ("clear", "cls"):
                     self.insertPlainText(self.prompt)
             else:
@@ -341,9 +341,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def execute_code(self, code):
-        # ==========================================
-        # 【新增】拦截 clear / cls 命令
-        # ==========================================
         if code.strip() in ("clear", "cls"):
             self.clear()
             self.insertPlainText(self.prompt)
@@ -354,8 +351,21 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         try:
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
-                is_shape = isinstance(result, (mod3d.Shape, Part.Shape))
                 
+                # 【核心修复】增加对 Shape2d 的处理
+                is_shape = False
+                raw_shape = None
+                
+                if isinstance(result, Shape2d):
+                    raw_shape = result.to_face()
+                    is_shape = True
+                elif isinstance(result, mod3d.Shape):
+                    raw_shape = result.shape
+                    is_shape = True
+                elif isinstance(result, Part.Shape):
+                    raw_shape = result
+                    is_shape = True
+
                 if is_shape:
                     consumed = list(dict.fromkeys(self._consumed_targets))
                     while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
@@ -371,22 +381,29 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                             old_transparency = old_obj.ViewObject.Transparency if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
 
                             if not consumed:
-                                new_obj = show(result.shape if isinstance(result, mod3d.Shape) else result, name=next_name)
+                                new_obj = show(raw_shape, name=next_name)
                                 doc.recompute()
                             else:
-                                root_obj = self._build_tree(result, doc)
-                                consumed_objs = [doc.getObject(n) for n in consumed]
-                                consumed_names = [obj.Name for obj in consumed_objs if obj]
+                                # 如果输入的是 2D 图形且涉及到了 part() 操作，则需要特殊处理
+                                # 这里暂不支持 2D 图形的非破坏性树构建，因为 FreeCAD 2D 布尔较复杂
+                                # 但如果只是直接组合，可以先把 2D 变 3D 再走 _build_tree
+                                if isinstance(result, Shape2d):
+                                    new_obj = show(raw_shape, name=next_name)
+                                    doc.recompute()
+                                else:
+                                    root_obj = self._build_tree(result, doc)
+                                    consumed_objs = [doc.getObject(n) for n in consumed]
+                                    consumed_names = [obj.Name for obj in consumed_objs if obj]
 
-                                if root_obj and root_obj.Name not in consumed_names:
-                                    for obj in consumed_objs:
-                                        if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
-                                            obj.ViewObject.Visibility = False
+                                    if root_obj and root_obj.Name not in consumed_names:
+                                        for obj in consumed_objs:
+                                            if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
+                                                obj.ViewObject.Visibility = False
 
-                                if old_obj and root_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
-                                    if old_color: root_obj.ViewObject.ShapeColor = old_color
-                                    if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
-                                doc.recompute()
+                                    if old_obj and root_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
+                                        if old_color: root_obj.ViewObject.ShapeColor = old_color
+                                        if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
+                                    doc.recompute()
                         except Exception as e:
                             self.write(f"❌ 构建失败: {str(e)}\n")
                             
