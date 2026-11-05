@@ -45,6 +45,6 @@ jobs:
       if: runner.os == 'Windows'
       shell: bash -l {0}
       run: |
-        # Windows Conda 环境下直接运行测试
+        # Windows 直接跑（Conda 已处理好环境变量）
         export PYTHONPATH="${{ github.workspace }};$CONDA_PREFIX/Lib/site-packages"
         pytest tests/ -v
