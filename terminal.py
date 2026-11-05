@@ -27,15 +27,12 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
-        # 禁用自动换行，使用水平滚动条
+        # 禁用自动换行
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         
         self._consumed_targets = []
         self.model_counter = 1
 
-        # ==========================================
-        # 【新增】历史记录相关属性
-        # ==========================================
         self.history = []
         self.history_index = 0
 
@@ -174,17 +171,53 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         except RuntimeError: 
             pass
 
+    def _clear_current_line(self):
+        """清空当前行的输入，保留提示符"""
+        cursor = self.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.StartOfLine)
+        # 跳过提示符 (4个字符: ">>> " 或 "... ")
+        cursor.movePosition(QtGui.QTextCursor.Right, n=4) 
+        cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        self.moveCursor(QtGui.QTextCursor.End)
+
+    def _remove_last_line(self):
+        """删除多行输入时的最后一行，并回到上一行"""
+        cursor = self.textCursor()
+        cursor.movePosition(QtGui.QTextCursor.StartOfLine)
+        cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        cursor.deletePreviousChar() # 删除上方的换行符
+        self.moveCursor(QtGui.QTextCursor.End)
+
     def keyPressEvent(self, event):
         # ==========================================
-        # 【新增】处理上/下方向键，调取历史命令
+        # 【新增】Ctrl + U 清空当前输入行
         # ==========================================
+        if event.key() == QtCore.Qt.Key_U and event.modifiers() == QtCore.Qt.ControlModifier:
+            self._clear_current_line()
+            return
+            
+        # ==========================================
+        # 【新增】Ctrl + Z 撤销当前输入/退格多行
+        # ==========================================
+        if event.key() == QtCore.Qt.Key_Z and event.modifiers() == QtCore.Qt.ControlModifier:
+            if self.buffer:
+                self.buffer.pop()
+                self._remove_last_line()
+            else:
+                self._clear_current_line()
+            return
+
+        # 处理上方向键 (历史命令)
         if event.key() == QtCore.Qt.Key_Up:
-            if self.history and not self.buffer: # 只有在单行状态下且历史不为空才生效
+            if self.history and not self.buffer:
                 if self.history_index > 0:
                     self.history_index -= 1
                 self._replace_current_line(self.history[self.history_index])
             return
 
+        # 处理下方向键 (历史命令)
         elif event.key() == QtCore.Qt.Key_Down:
             if self.history and not self.buffer:
                 if self.history_index < len(self.history) - 1:
@@ -192,7 +225,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self._replace_current_line(self.history[self.history_index])
                 else:
                     self.history_index = len(self.history)
-                    self._replace_current_line("") # 回到底部，清空输入
+                    self._replace_current_line("")
             return
 
         # 处理回车
@@ -219,11 +252,9 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             if is_complete:
                 self.insertPlainText("\n")
                 if full_code.strip(): 
-                    # 【新增】将完整的非空命令存入历史，并重置指针
-                    if full_code.strip() not in self.history: # 简单的去重
+                    if full_code.strip() not in self.history:
                         self.history.append(full_code.strip())
                     self.history_index = len(self.history)
-                    
                     self.execute_code(full_code)
                 
                 self.buffer.clear()
@@ -235,10 +266,9 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             super().keyPressEvent(event)
 
     def _replace_current_line(self, text):
-        """辅助方法：将当前光标所在行的输入替换为指定的文本"""
+        """将当前光标所在行的输入替换为指定的文本"""
         cursor = self.textCursor()
         cursor.movePosition(QtGui.QTextCursor.StartOfLine)
-        # 跳过提示符 (>>> 或 ...)
         cursor.movePosition(QtGui.QTextCursor.Right, n=4) 
         cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
         cursor.removeSelectedText()
