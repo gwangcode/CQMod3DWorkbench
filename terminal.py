@@ -314,18 +314,23 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                     if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
                                 doc.recompute()
                         except Exception as e:
-                            self.write(f"Show Error: {e}\n")
+                            self.write(f"❌ 构建失败: {str(e)}\n")
                             
                     QtCore.QTimer.singleShot(10, do_show)
                 elif result is not None:
                     self.write(repr(result) + "\n")
+                    
             except SyntaxError:
+                # 当 eval 报语法错误时，尝试用 exec 执行
                 try: 
                     exec(compile(code, "<terminal>", "exec"), self.local_vars)
-                except Exception: 
-                    self.write(f"{traceback.format_exc()}\n")
-        except Exception:
-            self.write(f"{traceback.format_exc()}\n")
+                except SyntaxError:
+                    self.write("❌ 语法错误: 请检查括号、引号是否闭合，或代码格式是否正确。\n")
+                except Exception as e:
+                    self.write(f"❌ 执行错误: {str(e)}\n")
+                    
+        except Exception as e:
+            self.write(f"❌ 未知错误: {str(e)}\n")
 
     def closeEvent(self, event):
         sys.stdout = self.old_stdout
