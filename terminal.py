@@ -126,7 +126,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 
                 is_shape = False
                 raw_shape = None
-                is_transform_op = False  # 判断是否为纯变换
+                is_transform_op = False
                 
                 if isinstance(result, mod3d.Shape):
                     is_shape = True
@@ -135,35 +135,22 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 elif isinstance(result, Part.Shape):
                     is_shape = True
                     raw_shape = result
-                    is_transform_op = False  # 原生的 Part.Shape 无法判断，统一当非破坏处理
                 
                 if is_shape:
                     consumed = list(dict.fromkeys(self._consumed_targets))
                     
-                    while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
-                        self.model_counter += 1
-                    next_name = f"model_{self.model_counter}"
-                    self.model_counter += 1
-                    
                     def do_show():
                         doc = FreeCAD.ActiveDocument
                         try:
-                            # 备份属性
                             old_obj = doc.getObject(consumed[0]) if consumed else None
                             old_color = old_obj.ViewObject.ShapeColor if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
                             old_transparency = old_obj.ViewObject.Transparency if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
                             old_label = old_obj.Label if old_obj else ""
                             old_placement = old_obj.Placement.copy() if old_obj else None
 
-                            # ==========================================
-                            # 【核心分流】：
-                            # 1. 如果是平移/旋转/缩放 (is_transform_op=True)：删除原模型，原地替换。
-                            # 2. 如果是布尔/变形/新建 (is_transform_op=False)：非破坏性，保留原模型。
-                            # ==========================================
-                            
                             if is_transform_op:
-                                # 破坏性替换（纯变换）
-                                host_name = consumed[0] if consumed else next_name
+                                # 纯变换：原地替换
+                                host_name = consumed[0] if consumed else "Unnamed"
                                 if consumed:
                                     for name in consumed:
                                         if doc.getObject(name):
@@ -179,40 +166,47 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                     doc.recompute()
                                     
                             else:
-                                # 非破坏性（布尔/变形/纯新建）
-                                # 1. 隐藏所有被消耗的原模型
+                                # 非破坏性建模
                                 for name in consumed:
                                     obj = doc.getObject(name)
                                     if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
                                         obj.ViewObject.Visibility = False
                                 
-                                # 2. 尽可能生成原生特征节点
+                                # 如果涉及两个 part，优先使用 FreeCAD 原生的 Fusion / Cut / Common
                                 if len(consumed) == 2 and code.count("part(") == 2:
                                     old_objs = [doc.getObject(n) for n in consumed if doc.getObject(n)]
                                     if "+" in code:
-                                        new_obj = doc.addObject("Part::MultiFuse", next_name)
+                                        new_obj = doc.addObject("Part::MultiFuse")
                                         new_obj.Shapes = old_objs
                                     elif "-" in code:
-                                        new_obj = doc.addObject("Part::Cut", next_name)
+                                        new_obj = doc.addObject("Part::Cut")
                                         new_obj.Base = old_objs[0]
                                         new_obj.Tool = old_objs[1]
                                     elif "*" in code:
-                                        new_obj = doc.addObject("Part::MultiCommon", next_name)
+                                        new_obj = doc.addObject("Part::MultiCommon")
                                         new_obj.Shapes = old_objs
-                                    else:
-                                        new_obj = doc.addObject("Part::Feature", next_name)
-                                        new_obj.Shape = raw_shape
                                 else:
-                                    new_obj = doc.addObject("Part::Feature", next_name)
+                                    # 其他复杂操作（单模型变形、函数调用），生成带有来源属性的独立特征节点
+                                    op_name = "Feature"
+                                    if "apply_noise" in code: op_name = "Noise"
+                                    elif "^" in code: op_name = "Twist"
+                                    elif "array" in code: op_name = "Array"
+                                    elif "@" in code: op_name = "Rotate"
+                                    elif "*" in code: op_name = "Scale"
+                                    
+                                    new_obj = doc.addObject("Part::Feature", op_name)
                                     new_obj.Shape = raw_shape
+                                    
+                                    # 添加 Sources 属性，记录这步操作来源于哪些原模型
+                                    if consumed:
+                                        new_obj.addProperty("App::PropertyLinkList", "Sources", "Base", "Source objects")
+                                        new_obj.Sources = [doc.getObject(n) for n in consumed if doc.getObject(n)]
                                 
-                                # 3. 继承属性
-                                if old_obj:
-                                    new_obj.Label = f"{old_label}_Op"
-                                    if hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
-                                        if old_color: new_obj.ViewObject.ShapeColor = old_color
-                                        if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
-                                        
+                                # 继承颜色
+                                if old_obj and hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
+                                    if old_color: new_obj.ViewObject.ShapeColor = old_color
+                                    if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
+                                
                                 doc.recompute()
                                     
                         except Exception as e:
