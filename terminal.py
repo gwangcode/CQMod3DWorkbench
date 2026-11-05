@@ -32,7 +32,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         
         self._consumed_targets = []
         self.model_counter = 1
-
         self.history = []
         self.history_index = 0
 
@@ -171,36 +170,54 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         except RuntimeError: 
             pass
 
+    def _is_brackets_balanced(self, code):
+        """辅助方法：物理检测括号是否闭合，防止 codeop 抽风"""
+        stack = []
+        in_string = None
+        escape = False
+        for char in code:
+            if escape:
+                escape = False
+                continue
+            if char == '\\':
+                escape = True
+                continue
+            if in_string:
+                if char == in_string:
+                    in_string = None
+                continue
+            if char in ('"', "'"):
+                in_string = char
+                continue
+            if char in ('(', '[', '{'):
+                stack.append(char)
+            elif char in (')', ']', '}'):
+                if not stack:
+                    return True
+                stack.pop()
+        return len(stack) == 0
+
     def _clear_current_line(self):
-        """清空当前行的输入，保留提示符"""
         cursor = self.textCursor()
         cursor.movePosition(QtGui.QTextCursor.StartOfLine)
-        # 跳过提示符 (4个字符: ">>> " 或 "... ")
         cursor.movePosition(QtGui.QTextCursor.Right, n=4) 
         cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
         cursor.removeSelectedText()
         self.moveCursor(QtGui.QTextCursor.End)
 
     def _remove_last_line(self):
-        """删除多行输入时的最后一行，并回到上一行"""
         cursor = self.textCursor()
         cursor.movePosition(QtGui.QTextCursor.StartOfLine)
         cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
         cursor.removeSelectedText()
-        cursor.deletePreviousChar() # 删除上方的换行符
+        cursor.deletePreviousChar()
         self.moveCursor(QtGui.QTextCursor.End)
 
     def keyPressEvent(self, event):
-        # ==========================================
-        # 【新增】Ctrl + U 清空当前输入行
-        # ==========================================
         if event.key() == QtCore.Qt.Key_U and event.modifiers() == QtCore.Qt.ControlModifier:
             self._clear_current_line()
             return
             
-        # ==========================================
-        # 【新增】Ctrl + Z 撤销当前输入/退格多行
-        # ==========================================
         if event.key() == QtCore.Qt.Key_Z and event.modifiers() == QtCore.Qt.ControlModifier:
             if self.buffer:
                 self.buffer.pop()
@@ -209,7 +226,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 self._clear_current_line()
             return
 
-        # 处理上方向键 (历史命令)
         if event.key() == QtCore.Qt.Key_Up:
             if self.history and not self.buffer:
                 if self.history_index > 0:
@@ -217,7 +233,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 self._replace_current_line(self.history[self.history_index])
             return
 
-        # 处理下方向键 (历史命令)
         elif event.key() == QtCore.Qt.Key_Down:
             if self.history and not self.buffer:
                 if self.history_index < len(self.history) - 1:
@@ -228,7 +243,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self._replace_current_line("")
             return
 
-        # 处理回车
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
             cursor = self.textCursor()
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
@@ -244,8 +258,12 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
 
+            # 【核心修复】结合 codeop 和括号匹配双重验证
+            is_complete = False
             try: 
-                is_complete = codeop.compile_command(full_code, "<input>", "exec") is not None
+                if codeop.compile_command(full_code, "<input>", "exec") is not None:
+                    if self._is_brackets_balanced(full_code):
+                        is_complete = True
             except (SyntaxError, ValueError): 
                 is_complete = True
 
@@ -266,7 +284,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             super().keyPressEvent(event)
 
     def _replace_current_line(self, text):
-        """将当前光标所在行的输入替换为指定的文本"""
         cursor = self.textCursor()
         cursor.movePosition(QtGui.QTextCursor.StartOfLine)
         cursor.movePosition(QtGui.QTextCursor.Right, n=4) 
@@ -321,7 +338,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.write(repr(result) + "\n")
                     
             except SyntaxError:
-                # 当 eval 报语法错误时，尝试用 exec 执行
                 try: 
                     exec(compile(code, "<terminal>", "exec"), self.local_vars)
                 except SyntaxError:
