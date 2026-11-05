@@ -4,6 +4,7 @@ import Part
 import sys
 import traceback
 import codeop
+import os
 
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
@@ -13,38 +14,37 @@ except ImportError:
     except ImportError:
         from PySide import QtCore, QtGui, QtWidgets
 
+# 导入纯 FreeCAD 的 mod3d 库
 try:
-    import cadquery as cq
-    import cq_mod3d
+    import mod3d
     from utils import show
 except ImportError as e:
-    FreeCAD.Console.PrintError(f"Failed to load cq_mod3d: {e}\n")
+    FreeCAD.Console.PrintError(f"Failed to load mod3d: {e}\n")
 
 class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
-        # 用于记录被 part() 读取的对象的原名
-        self._current_target = None
+        self._consumed_targets = []
+        self.model_counter = 1
         
+        # 构建终端环境
         self.local_vars = {
             "App": FreeCAD,
             "Gui": FreeCADGui,
             "Part": Part,
             "show": show,
-            "part": self._part_func, # 绑定到类方法
-            "cq": cq,
-            "m3": cq_mod3d,
-            "cq_mod3d": cq_mod3d
+            "part": self._part_func,
+            "mod3d": mod3d,
+            "V": FreeCAD.Vector  # 提供快捷的向量构造
         }
         
-        if 'cq_mod3d' in sys.modules:
-            for name in dir(cq_mod3d):
+        # 把 mod3d 里的所有函数（cube, sphere 等）平铺注入
+        if 'mod3d' in sys.modules:
+            for name in dir(mod3d):
                 if not name.startswith("_"):
-                    self.local_vars[name] = getattr(cq_mod3d, name)
-        
-        self.model_counter = 1
+                    self.local_vars[name] = getattr(mod3d, name)
         
         self.old_stdout = sys.stdout
         self.old_stderr = sys.stderr
@@ -59,7 +59,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def _part_func(self, name):
-        """从 FreeCAD 获取对象，并记录下我们正在操作这个名字"""
+        """从文档获取 Part.Shape，并记录，用于覆盖或计算"""
         doc = FreeCAD.ActiveDocument
         if not doc: 
             raise ValueError("没有活动的 FreeCAD 文档。")
@@ -68,20 +68,8 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             raise ValueError(f"找不到名为 '{name}' 的对象。")
         
         if hasattr(obj, "Shape") and obj.Shape:
-            import tempfile, os
-            temp_fd, temp_path = tempfile.mkstemp(suffix=".brep")
-            os.close(temp_fd)
-            try:
-                obj.Shape.exportBrep(temp_path)
-                cq_shape = cq.importers.importBrep(temp_path).val()
-                
-                # 【核心魔法】在这里记下：用户正在引用它
-                self._current_target = name 
-                
-                return cq.Workplane("XY").newObject([cq_shape])
-            finally:
-                if os.path.exists(temp_path):
-                    os.unlink(temp_path)
+            self._consumed_targets.append(name)
+            return obj.Shape  # 直接返回原生 Shape，速度极快
         else:
             raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
 
@@ -104,6 +92,9 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             current_prompt = self.prompt if not self.buffer else self.continuation_prompt
             code_line = line_text.replace(current_prompt, "")
             
+            # 自动纠正中文引号
+            code_line = code_line.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
+            
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
             
@@ -125,23 +116,47 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             super().keyPressEvent(event)
 
     def execute_code(self, code):
-        # 每次执行前，清空目标记录
-        self._current_target = None 
+        self._consumed_targets = []
         
         try:
+            # 尝试单行 eval
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 
-                if isinstance(result, cq.Workplane):
-                    # 检查 _part_func 是否被调用过并留下了记录
-                    target_name = self._current_target 
+                if isinstance(result, Part.Shape):
+                    consumed = list(set(self._consumed_targets))
                     
-                    if target_name and FreeCAD.ActiveDocument.getObject(target_name):
-                        # 覆盖模式：把之前的删掉，用原名建新的
-                        FreeCAD.ActiveDocument.removeObject(target_name)
-                        clean_name = target_name
+                    old_obj = None
+                    clean_name = ""
+                    
+                    old_label = ""
+                    old_placement = None
+                    old_color = None
+                    old_transparency = None
+                    
+                    # 如果调用了 part() 且不是显式的 show()
+                    if consumed and not code.strip().startswith("show("):
+                        host_name = consumed[0]
+                        old_obj = FreeCAD.ActiveDocument.getObject(host_name)
+                        
+                        if old_obj:
+                            old_label = old_obj.Label
+                            old_placement = old_obj.Placement.copy()
+                            if hasattr(old_obj, 'ViewObject') and old_obj.ViewObject:
+                                old_color = old_obj.ViewObject.ShapeColor
+                                old_transparency = old_obj.ViewObject.Transparency
+                        
+                        # 销毁所有被消耗的对象
+                        for name in consumed:
+                            if FreeCAD.ActiveDocument.getObject(name):
+                                FreeCAD.ActiveDocument.removeObject(name)
+                        clean_name = host_name
                     else:
-                        # 全新模式：自动生成 model_x
+                        # 完全新建
+                        for name in consumed:
+                            if FreeCAD.ActiveDocument.getObject(name):
+                                FreeCAD.ActiveDocument.removeObject(name)
+                        
                         while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
                             self.model_counter += 1
                         clean_name = f"model_{self.model_counter}"
@@ -149,7 +164,14 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     
                     def do_show():
                         try:
-                            show(result, name=clean_name)
+                            new_obj = show(result, name=clean_name)
+                            if old_obj and new_obj:
+                                new_obj.Label = old_label
+                                new_obj.Placement = old_placement
+                                if hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
+                                    if old_color: new_obj.ViewObject.ShapeColor = old_color
+                                    if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
+                                FreeCAD.ActiveDocument.recompute()
                         except Exception as e:
                             self.write(f"Show Error: {e}\n")
                             
@@ -159,8 +181,11 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.write(repr(result) + "\n")
                     
             except SyntaxError:
-                exec(compile(code, "<terminal>", "exec"), self.local_vars)
-                
+                try:
+                    exec(compile(code, "<terminal>", "exec"), self.local_vars)
+                except Exception:
+                    self.write(f"{traceback.format_exc()}\n")
+                    
         except Exception:
             self.write(f"{traceback.format_exc()}\n")
             
