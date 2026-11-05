@@ -8,7 +8,10 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
     
     steps:
     - name: Checkout repository
@@ -29,12 +32,19 @@ jobs:
           trimesh
           shapely
 
-    - name: Run Tests with xvfb
+    - name: Run Tests (Linux)
+      if: runner.os == 'Linux'
       shell: micromamba-shell {0}
-      env:
-        PYTHONPATH: ${{ github.workspace }}
-        QT_QPA_PLATFORM: offscreen
-        LD_LIBRARY_PATH: ${{ env.CONDA_PREFIX }}/lib
       run: |
-        # 使用虚拟显示器跑纯 FreeCAD 原生测试
+        export PYTHONPATH=${{ github.workspace }}:$CONDA_PREFIX/lib/freecad/lib:$CONDA_PREFIX/lib/freecad/Mod:$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/python3.11/site-packages:$PYTHONPATH
+        export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/freecad/lib:$LD_LIBRARY_PATH
+        export QT_QPA_PLATFORM=offscreen
         xvfb-run -a pytest tests/ -v
+
+    - name: Run Tests (Windows)
+      if: runner.os == 'Windows'
+      shell: bash -l {0}
+      run: |
+        # Windows Conda 环境下直接运行测试
+        export PYTHONPATH="${{ github.workspace }};$CONDA_PREFIX/Lib/site-packages"
+        pytest tests/ -v
