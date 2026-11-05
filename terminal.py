@@ -85,8 +85,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
             
             line_text = cursor.selectedText()
-            
-            # 【容错修复】清理行首的各种提示符
             code_line = line_text
             if code_line.startswith(">>> "):
                 code_line = code_line[4:]
@@ -97,7 +95,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             elif code_line.startswith("..."):
                 code_line = code_line[3:]
             
-            # 自动纠错中文引号
             code_line = code_line.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
             
             self.buffer.append(code_line)
@@ -129,58 +126,95 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 
                 is_shape = False
                 raw_shape = None
+                is_transform_op = False  # 判断是否为纯变换
+                
                 if isinstance(result, mod3d.Shape):
                     is_shape = True
                     raw_shape = result.shape
+                    is_transform_op = getattr(result, "_is_transform", False)
                 elif isinstance(result, Part.Shape):
                     is_shape = True
                     raw_shape = result
+                    is_transform_op = False  # 原生的 Part.Shape 无法判断，统一当非破坏处理
                 
                 if is_shape:
-                    consumed = list(set(self._consumed_targets))
-                    old_obj = None
-                    clean_name = ""
+                    consumed = list(dict.fromkeys(self._consumed_targets))
                     
-                    old_label = ""
-                    old_placement = None
-                    old_color = None
-                    old_transparency = None
-                    
-                    if consumed and not code.strip().startswith("show("):
-                        host_name = consumed[0]
-                        old_obj = FreeCAD.ActiveDocument.getObject(host_name)
-                        
-                        if old_obj:
-                            old_label = old_obj.Label
-                            old_placement = old_obj.Placement.copy()
-                            if hasattr(old_obj, 'ViewObject') and old_obj.ViewObject:
-                                old_color = old_obj.ViewObject.ShapeColor
-                                old_transparency = old_obj.ViewObject.Transparency
-                        
-                        for name in consumed:
-                            if FreeCAD.ActiveDocument.getObject(name):
-                                FreeCAD.ActiveDocument.removeObject(name)
-                        clean_name = host_name
-                    else:
-                        for name in consumed:
-                            if FreeCAD.ActiveDocument.getObject(name):
-                                FreeCAD.ActiveDocument.removeObject(name)
-                        
-                        while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
-                            self.model_counter += 1
-                        clean_name = f"model_{self.model_counter}"
+                    while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
                         self.model_counter += 1
+                    next_name = f"model_{self.model_counter}"
+                    self.model_counter += 1
                     
                     def do_show():
+                        doc = FreeCAD.ActiveDocument
                         try:
-                            new_obj = show(raw_shape, name=clean_name)
-                            if old_obj and new_obj:
-                                new_obj.Label = old_label
-                                new_obj.Placement = old_placement
-                                if hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
-                                    if old_color: new_obj.ViewObject.ShapeColor = old_color
-                                    if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
-                                FreeCAD.ActiveDocument.recompute()
+                            # 备份属性
+                            old_obj = doc.getObject(consumed[0]) if consumed else None
+                            old_color = old_obj.ViewObject.ShapeColor if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
+                            old_transparency = old_obj.ViewObject.Transparency if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
+                            old_label = old_obj.Label if old_obj else ""
+                            old_placement = old_obj.Placement.copy() if old_obj else None
+
+                            # ==========================================
+                            # 【核心分流】：
+                            # 1. 如果是平移/旋转/缩放 (is_transform_op=True)：删除原模型，原地替换。
+                            # 2. 如果是布尔/变形/新建 (is_transform_op=False)：非破坏性，保留原模型。
+                            # ==========================================
+                            
+                            if is_transform_op:
+                                # 破坏性替换（纯变换）
+                                host_name = consumed[0] if consumed else next_name
+                                if consumed:
+                                    for name in consumed:
+                                        if doc.getObject(name):
+                                            doc.removeObject(name)
+                                
+                                new_obj = show(raw_shape, name=host_name)
+                                if old_obj and new_obj:
+                                    new_obj.Label = old_label
+                                    if old_placement: new_obj.Placement = old_placement
+                                    if hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
+                                        if old_color: new_obj.ViewObject.ShapeColor = old_color
+                                        if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
+                                    doc.recompute()
+                                    
+                            else:
+                                # 非破坏性（布尔/变形/纯新建）
+                                # 1. 隐藏所有被消耗的原模型
+                                for name in consumed:
+                                    obj = doc.getObject(name)
+                                    if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
+                                        obj.ViewObject.Visibility = False
+                                
+                                # 2. 尽可能生成原生特征节点
+                                if len(consumed) == 2 and code.count("part(") == 2:
+                                    old_objs = [doc.getObject(n) for n in consumed if doc.getObject(n)]
+                                    if "+" in code:
+                                        new_obj = doc.addObject("Part::MultiFuse", next_name)
+                                        new_obj.Shapes = old_objs
+                                    elif "-" in code:
+                                        new_obj = doc.addObject("Part::Cut", next_name)
+                                        new_obj.Base = old_objs[0]
+                                        new_obj.Tool = old_objs[1]
+                                    elif "*" in code:
+                                        new_obj = doc.addObject("Part::MultiCommon", next_name)
+                                        new_obj.Shapes = old_objs
+                                    else:
+                                        new_obj = doc.addObject("Part::Feature", next_name)
+                                        new_obj.Shape = raw_shape
+                                else:
+                                    new_obj = doc.addObject("Part::Feature", next_name)
+                                    new_obj.Shape = raw_shape
+                                
+                                # 3. 继承属性
+                                if old_obj:
+                                    new_obj.Label = f"{old_label}_Op"
+                                    if hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
+                                        if old_color: new_obj.ViewObject.ShapeColor = old_color
+                                        if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
+                                        
+                                doc.recompute()
+                                    
                         except Exception as e:
                             self.write(f"Show Error: {e}\n")
                             
