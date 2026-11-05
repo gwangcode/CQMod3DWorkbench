@@ -3,22 +3,22 @@ import sys
 import os
 import glob
 
-def add_freecad_to_path():
-    if 'CONDA_PREFIX' in os.environ:
-        prefix = os.environ['CONDA_PREFIX']
-        for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib'), os.path.join(prefix, 'lib')]:
-            if os.path.exists(p) and p not in sys.path: sys.path.append(p)
-    if sys.platform == 'win32':
-        for p in glob.glob(r"C:\Program Files\FreeCAD*\bin"): sys.path.append(p)
+# def add_freecad_to_path():
+#     if 'CONDA_PREFIX' in os.environ:
+#         prefix = os.environ['CONDA_PREFIX']
+#         for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib'), os.path.join(prefix, 'lib')]:
+#             if os.path.exists(p) and p not in sys.path: sys.path.append(p)
+#     if sys.platform == 'win32':
+#         for p in glob.glob(r"C:\Program Files\FreeCAD*\bin"): sys.path.append(p)
 
-add_freecad_to_path()
-try:
-    import FreeCAD
-    import Part
-except ImportError:
-    pytest.skip("FreeCAD not found.", allow_module_level=True)
+# add_freecad_to_path()
+# try:
+#     import FreeCAD
+#     import Part
+# except ImportError:
+#     pytest.skip("FreeCAD not found.", allow_module_level=True)
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import mod3d
 
 def test_primitives_volume():
