@@ -179,3 +179,102 @@ def test_extreme_multibranch_cascade(clean_doc):
     vol_3 = root_node.Shape.Volume
     # 刀具变粗了，挖掉的肉更多，最终体积必须变小
     assert vol_3 < vol_2, "修改中间层 Cylinder 半径失败！"
+
+def test_destructive_transform_in_place(clean_doc):
+    """
+    【核心语义测试】验证破坏性变换（平移/旋转/缩放）是【原地修改 Placement】，
+    而不是删除重建。
+    - 操作后：原对象依然存在（身份不变、名称不变）
+    - 操作后：没有生成多余的新节点
+    - 操作后：Placement 被正确更新
+    """
+    from terminal import PythonTerminal
+    term = PythonTerminal()
+
+    # 1. 创建一个基础模型
+    box = clean_doc.addObject("Part::Box", "MyBox")
+    box.Length = 10
+    box.Width = 10
+    box.Height = 10
+    box.Placement.Base = FreeCAD.Vector(0, 0, 0)
+
+    # 记录初始状态：文档中的对象总数
+    obj_count_before = len(clean_doc.Objects)
+    assert obj_count_before == 1
+
+    # 2. 在终端里执行平移操作（模拟用户敲入 part("MyBox") + [50, 0, 0]）
+    term._consumed_targets = ["MyBox"]
+    s_box = mod3d.Shape(box.Shape, doc_name="MyBox")
+    ast_translated = s_box + [50, 0, 0]
+    root = term._build_tree(ast_translated, clean_doc)
+    clean_doc.recompute()
+
+    # =====================================================
+    # 【断言 1】：原对象必须依然存在，不能消失！
+    # =====================================================
+    assert clean_doc.getObject("MyBox") is not None, "破坏性变换错误地删除了原对象！"
+
+    # =====================================================
+    # 【断言 2】：文档中的对象总数不变，没有生成新节点！
+    # =====================================================
+    assert len(clean_doc.Objects) == obj_count_before, \
+        "破坏性变换错误地创建了新节点，应该原地修改！"
+
+    # =====================================================
+    # 【断言 3】：root_obj 就是原对象本身（身份未变）
+    # =====================================================
+    assert root.Name == "MyBox", "返回的对象不是原对象，身份丢失！"
+
+    # =====================================================
+    # 【断言 4】：Placement 被正确更新（X 方向移动了 50）
+    # =====================================================
+    assert abs(box.Placement.Base.x - 50.0) < 1e-5, "Placement 未被正确更新！"
+
+
+def test_destructive_rotation_in_place(clean_doc):
+    """验证旋转操作同样是原地修改 Placement"""
+    from terminal import PythonTerminal
+    term = PythonTerminal()
+
+    box = clean_doc.addObject("Part::Box", "RotBox")
+    box.Length, box.Width, box.Height = 10, 20, 5
+    
+    obj_count_before = len(clean_doc.Objects)
+    
+    # 绕 Z 轴旋转 90 度
+    s_box = mod3d.Shape(box.Shape, doc_name="RotBox")
+    ast = s_box @ [0, 0, 1.5708]
+    term._build_tree(ast, clean_doc)
+    clean_doc.recompute()
+
+    # 断言原对象未被删除
+    assert clean_doc.getObject("RotBox") is not None
+    # 断言没有新对象被创建
+    assert len(clean_doc.Objects) == obj_count_before
+    # 断言旋转角度被应用（Placement.Rotation 不为单位四元数）
+    assert box.Placement.Rotation.Angle > 1.0
+
+
+def test_destructive_scale_creates_new_node(clean_doc):
+    """
+    注意：缩放与平移/旋转不同！
+    因为 FreeCAD 没有原生的'缩放置换'属性，缩放必须烘焙到几何里，
+    所以它会生成一个新节点（保留原对象）。
+    """
+    from terminal import PythonTerminal
+    term = PythonTerminal()
+
+    box = clean_doc.addObject("Part::Box", "ScaleBox")
+    box.Length = 10
+    
+    s_box = mod3d.Shape(box.Shape, doc_name="ScaleBox")
+    ast = s_box * 2.0  # 均匀放大 2 倍
+    root = term._build_tree(ast, clean_doc)
+    clean_doc.recompute()
+
+    # 缩放必须生成新节点（因为 Shape 变了，不是 Placement 能表达的）
+    assert root.Name != "ScaleBox", "缩放应该生成新对象，因为几何本身变了！"
+    # 原对象依然保留（非破坏性）
+    assert clean_doc.getObject("ScaleBox") is not None
+    # 缩放后体积变为原来的 8 倍
+    assert abs(root.Shape.Volume - 8000.0) < 1.0
