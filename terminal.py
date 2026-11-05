@@ -30,23 +30,37 @@ class NoiseFeature:
         obj.addProperty("App::PropertyFloat", "Density", "Noise", "Density").Density = 0.2
         obj.addProperty("App::PropertyFloat", "Smoothness", "Noise", "Smoothness").Smoothness = 2.0
         obj.addProperty("App::PropertyFloat", "Amplitude", "Noise", "Amplitude").Amplitude = 0.1
+        obj.addProperty("App::PropertyInteger", "Seed", "Noise", "Random seed").Seed = 0
         obj.Proxy = self
 
     def execute(self, obj):
-        if not obj.Base: return
+        if not obj.Base:
+            return
         from mod3d.patch import Shape
         from mod3d.deformers import apply_noise
-        
         base_shape = Shape(obj.Base.Shape)
-        result = apply_noise(base_shape, density=obj.Density, smoothness=obj.Smoothness, amplitude=obj.Amplitude)
+        result = apply_noise(
+            base_shape,
+            density=obj.Density,
+            smoothness=obj.Smoothness,
+            amplitude=obj.Amplitude,
+            seed=obj.Seed,
+        )
         obj.Shape = result.shape
 
+
 class ViewProviderNoise:
-    def __init__(self, vobj): vobj.Proxy = self
-    def getIcon(self): return ":/icons/Tree_Part.svg"
-    def attach(self, vobj): self.ViewObject = vobj
-    def updateData(self, fp, prop): pass
-    def onChanged(self, vp, prop): pass
+    def __init__(self, vobj):
+        vobj.Proxy = self
+    def getIcon(self):
+        return ":/icons/Tree_Part.svg"
+    def attach(self, vobj):
+        self.ViewObject = vobj
+    def updateData(self, fp, prop):
+        pass
+    def onChanged(self, vp, prop):
+        pass
+
 
 class TwistFeature:
     def __init__(self, obj):
@@ -54,27 +68,34 @@ class TwistFeature:
         obj.addProperty("App::PropertyFloat", "AngleX", "Twist", "Angle X").AngleX = 0.0
         obj.addProperty("App::PropertyFloat", "AngleY", "Twist", "Angle Y").AngleY = 0.0
         obj.addProperty("App::PropertyFloat", "AngleZ", "Twist", "Angle Z").AngleZ = 0.0
+        obj.addProperty("App::PropertyInteger", "Sections", "Twist", "Sections").Sections = 30
         obj.Proxy = self
 
     def execute(self, obj):
-        if not obj.Base: return
+        if not obj.Base:
+            return
         from mod3d.patch import Shape
         from mod3d.deformers import brep_twist_z
-        
         base_shape = Shape(obj.Base.Shape)
         if abs(obj.AngleX) < 1e-6 and abs(obj.AngleY) < 1e-6:
-            result = brep_twist_z(base_shape.shape, obj.AngleZ)
+            result = brep_twist_z(base_shape.shape, obj.AngleZ, sections=obj.Sections)
             obj.Shape = result
         else:
             res = base_shape ^ [obj.AngleX, obj.AngleY, obj.AngleZ]
             obj.Shape = res.shape
 
+
 class ViewProviderTwist:
-    def __init__(self, vobj): vobj.Proxy = self
-    def getIcon(self): return ":/icons/Tree_Part.svg"
-    def attach(self, vobj): self.ViewObject = vobj
-    def updateData(self, fp, prop): pass
-    def onChanged(self, vp, prop): pass
+    def __init__(self, vobj):
+        vobj.Proxy = self
+    def getIcon(self):
+        return ":/icons/Tree_Part.svg"
+    def attach(self, vobj):
+        self.ViewObject = vobj
+    def updateData(self, fp, prop):
+        pass
+    def onChanged(self, vp, prop):
+        pass
 
 
 # ==========================================
@@ -86,20 +107,26 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         self._consumed_targets = []
         self.model_counter = 1
-        
+
         self.local_vars = {
-            "App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show,
-            "part": self._part_func, "mod3d": mod3d, "V": FreeCAD.Vector
+            "App": FreeCAD,
+            "Gui": FreeCADGui,
+            "Part": Part,
+            "show": show,
+            "part": self._part_func,
+            "mod3d": mod3d,
+            "V": FreeCAD.Vector,
         }
         if 'mod3d' in sys.modules:
             for name in dir(mod3d):
-                if not name.startswith("_"): self.local_vars[name] = getattr(mod3d, name)
-        
+                if not name.startswith("_"):
+                    self.local_vars[name] = getattr(mod3d, name)
+
         self.old_stdout = sys.stdout
         self.old_stderr = sys.stderr
         sys.stdout = self
         sys.stderr = self
-        
+
         self.prompt = ">>> "
         self.continuation_prompt = "... "
         self.buffer = []
@@ -108,9 +135,10 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
 
     def _part_func(self, name):
         doc = FreeCAD.ActiveDocument
-        if not doc: raise ValueError("没有活动的 FreeCAD 文档。")
+        if not doc:
+            raise ValueError("没有活动的 FreeCAD 文档。")
         obj = doc.getObject(name)
-        if not obj: 
+        if not obj:
             all_objs = [o.Name for o in doc.Objects]
             raise ValueError(f"找不到名为 '{name}' 的对象。当前对象有: {', '.join(all_objs)}")
         if hasattr(obj, "Shape") and obj.Shape:
@@ -135,7 +163,8 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         # 2. 布尔运算
         if node.op in ["fuse", "cut", "common"]:
             child_objs = [self._build_tree(c, doc) for c in node.children]
-            if not all(child_objs): raise ValueError("构建树失败：找不到子对象")
+            if not all(child_objs):
+                raise ValueError("构建树失败：找不到子对象")
             if node.op == "fuse":
                 new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
                 new_obj.Shapes = child_objs
@@ -156,16 +185,17 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 child_obj.Placement.Base = child_obj.Placement.Base + FreeCAD.Vector(*data)
                 return child_obj
             elif t_type == "rotate":
-                child_obj.Placement.Rotation = child_obj.Placement.Rotation * FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), data[0]) \
-                                               * FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), data[1]) \
-                                               * FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), data[2])
+                child_obj.Placement.Rotation = child_obj.Placement.Rotation * \
+                    FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), data[0]) * \
+                    FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), data[1]) * \
+                    FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), data[2])
                 return child_obj
             else:
                 new_obj = doc.addObject("Part::Feature", get_next_name("Feature"))
                 new_obj.Shape = node.shape
                 return new_obj
 
-        # 4. 参数化噪声与扭转
+        # 4. 参数化噪声
         elif node.op == "noise":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Noise"))
@@ -176,8 +206,11 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Density = node.parameters.get("density", 0.2)
             new_obj.Smoothness = node.parameters.get("smoothness", 2.0)
             new_obj.Amplitude = node.parameters.get("amplitude", 0.1)
+            seed = node.parameters.get("seed", 0)
+            new_obj.Seed = int(seed) if seed is not None else 0
             return new_obj
 
+        # 4b. 参数化扭转
         elif node.op == "twist":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Twist"))
@@ -185,25 +218,38 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             if hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
                 ViewProviderTwist(new_obj.ViewObject)
             new_obj.Base = child_obj
-            angles = node.parameters.get("angles", (0,0,0))
+            angles = node.parameters.get("angles", (0, 0, 0))
             new_obj.AngleX = angles[0]
             new_obj.AngleY = angles[1]
             new_obj.AngleZ = angles[2]
+            new_obj.Sections = 30
+            return new_obj
+
+        # 4c. 静态线框噪声
+        elif node.op == "noise_wire":
+            new_obj = doc.addObject("Part::Feature", get_next_name("NoiseWire"))
+            new_obj.Shape = node.shape
             return new_obj
 
         # 5. 原生参数化图元
         elif getattr(node, 'primitive_data', None):
             p_type = node.primitive_data["type"]
             p_params = node.primitive_data["params"]
-            obj_map = {"box": "Part::Box", "sphere": "Part::Sphere", "cylinder": "Part::Cylinder", "cone": "Part::Cone", "torus": "Part::Torus"}
-            
+            obj_map = {
+                "box": "Part::Box",
+                "sphere": "Part::Sphere",
+                "cylinder": "Part::Cylinder",
+                "cone": "Part::Cone",
+                "torus": "Part::Torus",
+            }
             if p_type in obj_map:
                 temp = doc.addObject(obj_map[p_type], get_next_name(p_type.capitalize()))
-                for k, v in p_params.items(): setattr(temp, k, v)
+                for k, v in p_params.items():
+                    setattr(temp, k, v)
             else:
                 temp = doc.addObject("Part::Feature", get_next_name("Feature"))
                 temp.Shape = node.shape
-                
+
             if hasattr(temp, 'ViewObject') and temp.ViewObject:
                 temp.ViewObject.Visibility = False
             return temp
@@ -221,32 +267,40 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.insertPlainText(text)
             self.moveCursor(QtGui.QTextCursor.End)
             QtWidgets.QApplication.processEvents()
-        except RuntimeError: pass
+        except RuntimeError:
+            pass
 
     def keyPressEvent(self, event):
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
             cursor = self.textCursor()
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
-            
+
             code_line = cursor.selectedText()
-            if code_line.startswith(">>> "): code_line = code_line[4:]
-            elif code_line.startswith(">>>"): code_line = code_line[3:]
-            elif code_line.startswith("... "): code_line = code_line[4:]
-            elif code_line.startswith("..."): code_line = code_line[3:]
-            
-            code_line = code_line.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
-            
+            if code_line.startswith(">>> "):
+                code_line = code_line[4:]
+            elif code_line.startswith(">>>"):
+                code_line = code_line[3:]
+            elif code_line.startswith("... "):
+                code_line = code_line[4:]
+            elif code_line.startswith("..."):
+                code_line = code_line[3:]
+
+            code_line = code_line.replace('“', '"').replace('”', '"') \
+                                 .replace('‘', "'").replace('’', "'")
+
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
-            
+
             try:
                 is_complete = codeop.compile_command(full_code, "<input>", "exec") is not None
-            except (SyntaxError, ValueError): is_complete = True
+            except (SyntaxError, ValueError):
+                is_complete = True
 
             if is_complete:
                 self.insertPlainText("\n")
-                if full_code.strip(): self.execute_code(full_code)
+                if full_code.strip():
+                    self.execute_code(full_code)
                 self.buffer.clear()
                 self.insertPlainText(self.prompt)
             else:
@@ -261,14 +315,14 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 is_shape = isinstance(result, (mod3d.Shape, Part.Shape))
-                
+
                 if is_shape:
                     consumed = list(dict.fromkeys(self._consumed_targets))
                     while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
                         self.model_counter += 1
                     next_name = f"model_{self.model_counter}"
                     self.model_counter += 1
-                    
+
                     def do_show():
                         doc = FreeCAD.ActiveDocument
                         try:
@@ -277,31 +331,38 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                             old_transparency = old_obj.ViewObject.Transparency if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
 
                             if not consumed:
-                                new_obj = show(result.shape if isinstance(result, mod3d.Shape) else result, name=next_name)
+                                new_obj = show(
+                                    result.shape if isinstance(result, mod3d.Shape) else result,
+                                    name=next_name,
+                                )
                                 doc.recompute()
                             else:
                                 root_obj = self._build_tree(result, doc)
-                                
-                                # 【核心修复】：如果生成的 root_obj 就是原来被消耗的对象（原地破坏性更新），绝对不能隐藏它！
-                                consumed_objs = [doc.getObject(name) for name in consumed]
-                                if root_obj not in consumed_objs:
-                                    for name in consumed:
-                                        obj = doc.getObject(name)
+
+                                consumed_objs = [doc.getObject(n) for n in consumed]
+                                consumed_names = [obj.Name for obj in consumed_objs if obj]
+
+                                # 只有在新生成对象不等于原对象时，才隐藏原对象（原地变换则保留可见）
+                                if root_obj and root_obj.Name not in consumed_names:
+                                    for obj in consumed_objs:
                                         if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
                                             obj.ViewObject.Visibility = False
-                                
-                                if old_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
-                                    if old_color: root_obj.ViewObject.ShapeColor = old_color
-                                    if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
+
+                                if old_obj and root_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
+                                    if old_color:
+                                        root_obj.ViewObject.ShapeColor = old_color
+                                    if old_transparency is not None:
+                                        root_obj.ViewObject.Transparency = old_transparency
                                 doc.recompute()
-                                    
+
                         except Exception as e:
                             self.write(f"Show Error: {e}\n")
-                            
+
                     QtCore.QTimer.singleShot(10, do_show)
+
                 elif result is not None:
                     self.write(repr(result) + "\n")
-                    
+
             except SyntaxError:
                 try:
                     exec(compile(code, "<terminal>", "exec"), self.local_vars)
@@ -309,7 +370,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.write(f"{traceback.format_exc()}\n")
         except Exception:
             self.write(f"{traceback.format_exc()}\n")
-            
+
     def closeEvent(self, event):
         sys.stdout = self.old_stdout
         sys.stderr = self.old_stderr
