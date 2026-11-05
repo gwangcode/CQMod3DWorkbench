@@ -5,22 +5,22 @@ from .utils import _is_vec, _vec, _tessellate, _tri_mesh_to_shape
 from .deformers import brep_twist_z
 
 class Shape:
-    def __init__(self, part_shape, is_transform=False, op=None, children=None, doc_name=None, transform_data=None):
+    def __init__(self, part_shape, is_transform=False, op=None, children=None, doc_name=None, transform_data=None, primitive_data=None):
         self.shape = part_shape
         self._is_transform = is_transform
-        self.op = op                  # "fuse", "cut", "common", "transform"
-        self.children = children or [] # 子节点列表 (平铺，避免 A+B+C 变成多层嵌套)
-        self.doc_name = doc_name      # 如果在文档里已存在
-        self.transform_data = transform_data # 记录平移/旋转/缩放的具体数值
+        self.op = op                  
+        self.children = children or [] 
+        self.doc_name = doc_name      
+        self.transform_data = transform_data 
+        # 【核心新增】记录它是哪种原生图元，以及参数
+        self.primitive_data = primitive_data 
 
     def __add__(self, other):
         if _is_vec(other, 3):
             res = self.shape.copy()
             res.translate(FreeCAD.Vector(*other))
-            # 记录成 Transform 节点，包裹原先的节点
             return Shape(res, op="transform", children=[self], transform_data=("translate", other))
         if isinstance(other, Shape):
-            # 如果左边已经是 fuse，直接把右边加进 children，生成 MultiFuse
             if self.op == "fuse": return Shape(self.shape.fuse(other.shape).removeSplitter(), op="fuse", children=self.children + [other])
             return Shape(self.shape.fuse(other.shape).removeSplitter(), op="fuse", children=[self, other])
         if isinstance(other, Part.Shape):
@@ -59,8 +59,7 @@ class Shape:
         raise ValueError(f"Unsupported operand for *: {type(other)}")
 
     def __matmul__(self, angles):
-        if not _is_vec(angles, 3):
-            raise ValueError("Rotation expects [rx, ry, rz]")
+        if not _is_vec(angles, 3): raise ValueError("Rotation expects [rx, ry, rz]")
         ax, ay, az = _vec(angles)
         res = self.shape.copy()
         res.rotate(FreeCAD.Vector(0,0,0), FreeCAD.Vector(1,0,0), np.degrees(ax))
