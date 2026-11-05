@@ -4,7 +4,6 @@ import os
 import glob
 import numpy as np
 
-# 动态挂载 FreeCAD 路径
 def add_freecad_to_path():
     if 'CONDA_PREFIX' in os.environ:
         prefix = os.environ['CONDA_PREFIX']
@@ -25,27 +24,25 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import mod3d
 
 def test_primitives_volume():
-    """测试基础图元的体积计算准确性"""
     assert abs(mod3d.cube(10).Volume - 1000.0) < 1e-3
     assert abs(mod3d.cylinder(2, 10).Volume - (3.14159 * 4 * 10)) < 1.0
 
 def test_operator_chain():
-    """测试链式运算符：布尔、平移、旋转组合"""
+    """测试链式运算符：注意运算优先级，需加上括号"""
     base = mod3d.cube(10)
     hole = mod3d.cylinder(2, 15)
-    # 挖孔 -> 平移 -> 旋转
-    res = (base - hole) + [5, 0, 0] @ [0, 0, 1.57]
+    # 【核心修复】使用括号改变优先级
+    res = ((base - hole) + [5, 0, 0]) @ [0, 0, 1.57]
     
     assert isinstance(res.shape, Part.Shape)
     assert res.Volume < 1000.0
     assert res.Volume > 0
 
 def test_apply_noise_determinism():
-    """测试相同随机种子的确定性，不同种子产生差异"""
     base = mod3d.sphere(10)
     res1 = mod3d.apply_noise(base, seed=42, amplitude=1.0)
     res2 = mod3d.apply_noise(base, seed=42, amplitude=1.0)
     res3 = mod3d.apply_noise(base, seed=99, amplitude=1.0)
     
-    assert abs(res1.Volume - res2.Volume) < 1e-3  # 同种子体积一致
-    assert abs(res1.Volume - res3.Volume) > 0.1   # 异种子体积不同
+    assert abs(res1.Volume - res2.Volume) < 1e-3
+    assert abs(res1.Volume - res3.Volume) > 0.1
