@@ -39,45 +39,34 @@ def term():
     yield PythonTerminal()
     FreeCAD.closeDocument("E2ETest")
 
-def test_e2e_terminal_execution(term, mocker):
-    """测试在终端连续输入代码，验证是否正确触发了显示逻辑"""
+def test_e2e_terminal_execution(term):
+    """测试在终端连续输入代码，验证是否真实生成了 FreeCAD 节点"""
     
-    # 1. Mock 掉 QTimer，让其立即执行
+    # 1. Mock QTimer，让它同步执行，避免异步问题
     terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     
-    # 2. Mock 掉 show 函数，避免真实创建文档对象的复杂性
-    mock_show = mocker.patch('terminal.show')
-    mock_show.return_value = MagicMock()
-    
-    # 3. 模拟输入第一行: cube(10)
+    # 2. 输入第一行: cube(10)
     term.execute_code("cube(10)")
     
-    # 验证 show 被调用了一次，且名字是 model_1
-    mock_show.assert_called_once()
-    args, kwargs = mock_show.call_args
-    assert kwargs.get('name') == "model_1"
-    assert isinstance(args[0], Part.Shape)
-    
-    mock_show.reset_mock()
-    
-    # 4. 模拟输入第二行: part("model_1") - cylinder(2, 15)
-    # 因为 show 被 mock 了，文档里实际上没有 model_1，我们需要伪造一个
+    # 验证 FreeCAD 文档中是否真实生成了 model_1
     doc = FreeCAD.ActiveDocument
-    fake_base = doc.addObject("Part::Box", "model_1")
-    fake_base.Shape = Part.makeBox(10,10,10)
+    obj = doc.getObject("model_1")
+    assert obj is not None, "E2E 执行失败：未生成 model_1 对象"
+    assert obj.TypeId == "Part::Feature"
+    assert obj.Shape.Volume > 0
     
+    # 3. 输入第二行: part("model_1") - cylinder(2, 15)
     term.execute_code('part("model_1") - cylinder(2, 15)')
-    
-    # 因为这是布尔运算，应该走到 _build_tree，而不是直接调用 show
-    # 所以 mock_show 不应该被调用（终端内部调用的是 _build_tree 里的 doc.addObject）
-    mock_show.assert_not_called()
     
     # 验证文档中是否生成了 Cut 节点
     cut_node = None
-    for obj in doc.Objects:
-        if obj.TypeId == "Part::Cut":
-            cut_node = obj
+    for o in doc.Objects:
+        if o.TypeId == "Part::Cut":
+            cut_node = o
             break
             
     assert cut_node is not None, "E2E 执行失败：未生成 Cut 节点"
     assert cut_node.Base.Name == "model_1"
+    
+    # 验证原来的 model_1 被隐藏（非破坏性建模）
+    assert doc.getObject("model_1").ViewObject.Visibility is False
