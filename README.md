@@ -1,6 +1,7 @@
 # Mod3D Workbench for FreeCAD
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![DOI](https://zenodo.org/badge/1446196752.svg)](https://doi.org/10.5281/zenodo.23964056)
 [![CI](https://github.com/gwangcode/Mod3DWorkbench/actions/workflows/ci.yml/badge.svg)](https://github.com/gwangcode/Mod3DWorkbench/actions/workflows/ci.yml)
 
 An interactive, zero-dependency FreeCAD workbench that provides an embedded Python terminal. It features a built-in geometry manipulation engine (Mod3D) that leverages **pure FreeCAD native `Part` APIs** to enable lightning-fast procedural modeling, real-time parameter updates, and non-destructive history trees.
