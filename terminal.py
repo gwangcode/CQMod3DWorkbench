@@ -26,6 +26,10 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
+        
+        # 【核心修复】禁用自动换行，使用水平滚动条（符合标准终端体验）
+        self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        
         self._consumed_targets = []
         self.model_counter = 1
 
@@ -71,11 +75,9 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 idx += 1
             return final_name
 
-        # 1. 如果是已有文档的引用，直接返回
         if getattr(node, 'doc_name', None):
             return doc.getObject(node.doc_name)
 
-        # 2. 布尔运算
         if node.op in ["fuse", "cut", "common"]:
             child_objs = [self._build_tree(c, doc) for c in node.children]
             if not all(child_objs): 
@@ -92,17 +94,14 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 new_obj.Shapes = child_objs
             return new_obj
 
-        # 3. 空间变换（平移/旋转原地修改，缩放生成新节点）
         elif node.op == "transform":
             child_obj = self._build_tree(node.children[0], doc)
             t_type, data = node.transform_data
             
             if t_type == "translate":
-                # 【核心语义】直接修改 Placement，不新建节点
                 child_obj.Placement.Base = child_obj.Placement.Base + FreeCAD.Vector(*data)
                 return child_obj
             elif t_type == "rotate":
-                # 【核心修复】角度需转换为度
                 child_obj.Placement.Rotation = child_obj.Placement.Rotation * \
                     FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), math.degrees(data[0])) * \
                     FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), math.degrees(data[1])) * \
@@ -113,7 +112,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 new_obj.Shape = node.shape
                 return new_obj
 
-        # 4. 参数化噪声
         elif node.op == "noise":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Noise"))
@@ -127,7 +125,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Seed = node.parameters.get("seed", 0)
             return new_obj
 
-        # 4. 参数化扭转
         elif node.op == "twist":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Twist"))
@@ -142,7 +139,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Sections = 30
             return new_obj
 
-        # 5. 原生参数化图元
         elif getattr(node, 'primitive_data', None):
             p_type = node.primitive_data["type"]
             p_params = node.primitive_data["params"]
@@ -157,7 +153,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 temp.ViewObject.Visibility = False
             return temp
 
-        # 6. 兜底叶子节点
         temp = doc.addObject("Part::Feature", get_next_name("TempFeature"))
         temp.Shape = node.shape
         if hasattr(temp, 'ViewObject') and temp.ViewObject:
