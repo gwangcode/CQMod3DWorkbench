@@ -2,24 +2,16 @@ import pytest
 import sys
 import os
 import types
-import glob
 from unittest.mock import MagicMock
 
-# def add_freecad_to_path():
-#     if 'CONDA_PREFIX' in os.environ:
-#         prefix = os.environ['CONDA_PREFIX']
-#         for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib')]:
-#             if os.path.exists(p) and p not in sys.path: sys.path.append(p)
-
-# add_freecad_to_path()
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 class DummyQPlainTextEdit:
+    NoWrap = 0
     def __init__(self, *args, **kwargs): pass
     def setStyleSheet(self, *args, **kwargs): pass
     def insertPlainText(self, *args, **kwargs): pass
     def moveCursor(self, *args, **kwargs): pass
     def textCursor(self): return MagicMock()
+    def setLineWrapMode(self, mode): pass
 
 fake_pyside = types.ModuleType("PySide6")
 fake_qtcore = types.ModuleType("PySide6.QtCore")
@@ -36,6 +28,8 @@ sys.modules.update({'PySide6': fake_pyside, 'PySide6.QtCore': fake_qtcore, 'PySi
 if 'terminal' in sys.modules: del sys.modules['terminal']
 
 import FreeCAD
+import Part
+import mod3d
 from terminal import PythonTerminal
 
 @pytest.fixture
@@ -44,6 +38,7 @@ def term():
 
 def test_invalid_part_name(term):
     doc = FreeCAD.newDocument("EdgeTestDoc")
+    FreeCAD.setActiveDocument("EdgeTestDoc")
     try:
         with pytest.raises(ValueError) as exc_info:
             term._part_func("not_exist_model")
@@ -51,8 +46,14 @@ def test_invalid_part_name(term):
     finally:
         FreeCAD.closeDocument("EdgeTestDoc")
 
+def test_invalid_operator_type():
+    box = mod3d.cube(10)
+    with pytest.raises(ValueError):
+        box + "I am a string"
+
 def test_execute_syntax_error(term):
+    term.insertPlainText = MagicMock()
     term.write = MagicMock()
     term.execute_code("cube(")
     term.write.assert_called_once()
-    assert "SyntaxError" in term.write.call_args[0][0]
+    assert "语法错误" in term.write.call_args[0][0]
