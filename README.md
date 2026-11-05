@@ -11,7 +11,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 ## ✨ Features
 
 - **🚀 Zero-Configuration & Blazing Fast**: No external CAD kernels (like CadQuery or OCP) to download. The terminal opens instantly.
-- **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs, beautiful traceback error reporting, and intelligent syntax checking.
+- **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs, intelligent syntax checking, and a native REPL experience.
 - **⚡ Operator Overloading Magic**: Directly use Python's math operators on FreeCAD shapes for rapid boolean operations, transformations, and deformations.
 - **🔄 Non-Destructive Parametric Modeling**: All boolean operations and deformations preserve your original models. It automatically generates native FreeCAD nodes (e.g., `Fusion`, `Cut`, `Noise`, `Twist`) and hides the source objects. You can delete the new node at any time to recover the originals!
 - **🧠 Real-Time Updates**: Because we generate native parametric nodes, modifying a base object (like changing a sphere's radius) will automatically cascade and update all downstream boolean or noise operations.
@@ -83,12 +83,6 @@ part("model_1") + [15, 0, 0]
 apply_noise(part("model_1"), density=0.6, smoothness=1.5, amplitude=0.4)
 ```
 
-**5. Manipulate existing FreeCAD objects (even drawn via UI):**
-```python
-# If you drew a sketch and padded it named "BasePad", you can grab it like this:
-part("BasePad") - sphere(5)
-```
-
 ---
 
 ## ⌨️ Terminal Shortcuts & Commands
@@ -105,6 +99,83 @@ Our terminal is designed to feel just like a native code REPL:
 | `clear` or `cls` | Clear the entire terminal screen. |
 
 *(Note: The terminal automatically protects the `>>> ` prompt. You cannot accidentally delete it with Backspace or move the cursor past it.)*
+
+---
+
+## 🧊 Built-in Primitives Library
+
+The Mod3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy, ready to be displayed or manipulated. 2D primitives return a `Shape2d` object which can be transformed and converted to a face for extrusion.
+
+### 3D Primitives
+
+| Function Signature | Description |
+| :--- | :--- |
+| `cuboid(a=1, b=1, c=1)` | Creates a box with length `a`, width `b`, and height `c`. |
+| `cube(a=1)` | Creates a cube with side length `a`. |
+| `cylinder(radius=1, height=1)` | Creates a cylinder. |
+| `cone(radius=1, height=1)` | Creates a cone with base radius and height. |
+| `sphere(radius=1)` | Creates a sphere. |
+| `torus(major_radius=2, minor_radius=1)` | Creates a torus (donut shape). |
+| `ellipsoid(a=1, b=1, c=1)` | Creates an ellipsoid with semi-axes `a`, `b`, `c`. |
+| `prism(radius=1, n=3, height=1)` | Creates a regular n-sided prism. |
+| `pyramid(radius=1, n=3, height=1)` | Creates a regular n-sided pyramid. |
+| `tetrahedron(a=1)` | Creates a tetrahedron (4 faces). |
+| `octahedron(a=1)` | Creates an octahedron (8 faces). |
+| `dodecahedron(a=1)` | Creates a dodecahedron (12 faces). |
+| `icosahedron(a=1)` | Creates an icosahedron (20 faces). |
+| `convex_hull(vertices)` | Creates a convex hull from a list of 3D points `[[x,y,z], ...]`. |
+
+**Example:**
+```python
+# Create a torus and rotate it
+torus(20, 5) @ [1.57, 0, 0]
+```
+
+---
+
+### 2D Primitives
+
+2D primitives return a `Shape2d` object. To turn a 2D shape into a 3D solid, you can use the `.to_face()` method and extrude it using FreeCAD's native tools, or use them in sweeps/lofts.
+
+#### Standard 2D Shapes
+| Function Signature | Description |
+| :--- | :--- |
+| `polygon(R=1, n=6)` | Regular n-sided polygon with circumradius `R`. |
+| `circle(R=1, step=0.1)` | Circle with radius `R`. `step` controls the segment density. |
+| `rectangle(a=2, b=1)` | Rectangle with width `a` and height `b`. |
+| `square(a=1)` | Square with side length `a`. |
+| `parallelogram(a=1, b=1, angle=pi/4)` | Parallelogram with sides `a`, `b`, and angle in radians. |
+| `rhombus(a=1, angle=pi/4)` | Rhombus with side `a` and angle in radians. |
+| `trapezoid(upper_side=1, lower_side=2, height=1)` | Isosceles trapezoid. |
+| `ellipse(a=2, b=1, step=0.1)` | Ellipse with semi-major axis `a` and semi-minor axis `b`. |
+
+#### Regular Polygons
+`pentagon(R=1)`, `hexagon(R=1)`, `heptagon(R=1)`, `octagon(R=1)`, `nonagon(R=1)`, `decagon(R=1)`.
+
+#### Mathematical Curves
+| Function Signature | Description |
+| :--- | :--- |
+| `parabola(a=1, b=2, w=1, step=0.1)` | Parabola curve. |
+| `hyperbola(a=1, b=1, w=1, step=0.1)` | Hyperbola curve. |
+| `spiral(a=1, b=1, num_turns=2, step=0.1)` | Archimedean spiral. |
+| `cardioid(a=1, step=0.1)` | Cardioid (heart) curve. |
+| `cycloid(a=1, num_cycles=2, step=0.1)` | Cycloid curve. |
+| `astroid(a=1, step=0.1)` | Astroid (star) curve. |
+| `catenary(a=1, step=0.1)` | Catenary (hanging chain) curve. |
+| `epicycloid(R=10, r=1, step=0.1)` | Epicycloid curve. |
+| `hypocycloid(R=6, r=1, step=0.1)` | Hypocycloid curve. |
+| `lemniscate(a=1, step=0.1)` | Lemniscate (infinity) curve. |
+| `semicircle(radius=1, step=0.1)` | Semicircle curve. |
+| `sine(amplitude=1, frequency=1, x_start=0, x_end=2*pi, step=0.1)` | Sine wave. |
+| `tangent(x_start=-0.5*pi, x_end=0.5*pi, step=0.1)` | Tangent curve. |
+
+**Example: Creating a 3D shape from a 2D curve**
+```python
+# Create a 2D heart curve, convert it to a face, and extrude it into a 3D solid
+heart_2d = cardioid(10)
+heart_3d = heart_2d.to_face().extrude(FreeCAD.Vector(0, 0, 5))
+show(heart_3d, "Heart_Solid")
+```
 
 ---
 
