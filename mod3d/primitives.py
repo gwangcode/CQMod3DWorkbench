@@ -8,13 +8,23 @@ from .patch import Shape  # 引入代理类
 # ==========================================
 # ---- 3D primitives (返回 Shape 代理类) ----
 # ==========================================
-def cuboid(a=1, b=1, c=1): return Shape(Part.makeBox(a, b, c))
-def cube(a=1):              return cuboid(a, a, a)
-def cylinder(radius=1, height=1): return Shape(Part.makeCylinder(radius, height))
-def cone(radius=1, height=1):     return Shape(Part.makeCone(radius, 0, height))
-def sphere(radius=1, face_index=3): return Shape(Part.makeSphere(radius))
+def cuboid(a=1, b=1, c=1): 
+    return Shape(Part.makeBox(a, b, c), primitive_data={"type": "box", "params": {"Length": a, "Width": b, "Height": c}})
+
+def cube(a=1):              
+    return cuboid(a, a, a)
+
+def cylinder(radius=1, height=1): 
+    return Shape(Part.makeCylinder(radius, height), primitive_data={"type": "cylinder", "params": {"Radius": radius, "Height": height}})
+
+def cone(radius=1, height=1):     
+    return Shape(Part.makeCone(radius, 0, height), primitive_data={"type": "cone", "params": {"Radius1": radius, "Radius2": 0, "Height": height}})
+
+def sphere(radius=1, face_index=3): 
+    return Shape(Part.makeSphere(radius), primitive_data={"type": "sphere", "params": {"Radius": radius}})
+
 def torus(major_radius=2, minor_radius=1, division=0.1):
-    return Shape(Part.makeTorus(major_radius, minor_radius))
+    return Shape(Part.makeTorus(major_radius, minor_radius), primitive_data={"type": "torus", "params": {"Radius1": major_radius, "Radius2": minor_radius}})
 
 def ellipsoid(a=1, b=1, c=1, division=0.1):
     sphere = Part.makeSphere(1.0)
