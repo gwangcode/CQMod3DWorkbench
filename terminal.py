@@ -27,7 +27,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
         
-        # 禁用自动换行
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         
         self._consumed_targets = []
@@ -213,7 +212,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def keyPressEvent(self, event):
-        # 拦截光标移动与退格，保护提示符
         cursor = self.textCursor()
         block = cursor.block()
         line_text = block.text()
@@ -285,16 +283,11 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self._replace_current_line("")
             return
 
-        # ==========================================
-        # 【核心修复】Enter / Shift+Enter 处理
-        # ==========================================
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
-            # 1. 强制将光标移动到当前行的行尾，防止换行符插在中间
             cursor = self.textCursor()
             cursor.movePosition(QtGui.QTextCursor.EndOfLine)
             self.setTextCursor(cursor)
 
-            # 2. 提取整行代码
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
             code_line = cursor.selectedText()
@@ -308,13 +301,10 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
 
-            # 3. 判断执行逻辑
             is_complete = False
             if event.modifiers() == QtCore.Qt.ShiftModifier:
-                # 如果按了 Shift+Enter，强制进入续行模式
                 is_complete = False
             else:
-                # 否则判断是否完整
                 try: 
                     if codeop.compile_command(full_code, "<input>", "exec") is not None:
                         if self._is_brackets_balanced(full_code):
@@ -331,11 +321,12 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.execute_code(full_code)
                 
                 self.buffer.clear()
-                self.insertPlainText(self.prompt)
+                # 如果执行了 clear 命令，execute_code 内部会处理提示符，这里防止重复插入
+                if full_code.strip() not in ("clear", "cls"):
+                    self.insertPlainText(self.prompt)
             else:
                 self.insertPlainText("\n" + self.continuation_prompt)
                 
-            # 确保插入后光标在最后
             self.moveCursor(QtGui.QTextCursor.End)
         else:
             super().keyPressEvent(event)
@@ -350,6 +341,15 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def execute_code(self, code):
+        # ==========================================
+        # 【新增】拦截 clear / cls 命令
+        # ==========================================
+        if code.strip() in ("clear", "cls"):
+            self.clear()
+            self.insertPlainText(self.prompt)
+            self.moveCursor(QtGui.QTextCursor.End)
+            return
+
         self._consumed_targets = []
         try:
             try:
