@@ -33,12 +33,14 @@ def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
     """使用 FreeCAD 的 MeshPart 将三角网格转回 B-rep 实体"""
     mesh = Mesh.Mesh()
     
-    # 【核心修复】先批量创建 MeshPoint，直接传入 3 个 float，避免 Base.Vector 转换错误
-    mesh_points = [Mesh.MeshPoint(float(v[0]), float(v[1]), float(v[2])) for v in verts]
-    
-    # 然后直接添加面
+    # 【核心修复】直接传入 9 个 float，完美避开所有对象类型的兼容性问题
     for f in faces:
-        mesh.addFacet(mesh_points[f[0]], mesh_points[f[1]], mesh_points[f[2]])
+        v0, v1, v2 = verts[f[0]], verts[f[1]], verts[f[2]]
+        mesh.addFacet(
+            float(v0[0]), float(v0[1]), float(v0[2]),
+            float(v1[0]), float(v1[1]), float(v1[2]),
+            float(v2[0]), float(v2[1]), float(v2[2])
+        )
         
     shape = MeshPart.meshToShape(mesh, 0.1)
     
