@@ -34,9 +34,10 @@ def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
     mesh = Mesh.Mesh()
     for f in faces:
         mesh.addFacet(
-            Mesh.MeshPoint(Mesh.Vector(*verts[f[0]])),
-            Mesh.MeshPoint(Mesh.Vector(*verts[f[1]])),
-            Mesh.MeshPoint(Mesh.Vector(*verts[f[2]]))
+            # 【核心修复】将 Mesh.Vector 替换为 FreeCAD.Vector
+            Mesh.MeshPoint(FreeCAD.Vector(*verts[f[0]])),
+            Mesh.MeshPoint(FreeCAD.Vector(*verts[f[1]])),
+            Mesh.MeshPoint(FreeCAD.Vector(*verts[f[2]]))
         )
     shape = MeshPart.meshToShape(mesh, 0.1)
     # 若是 Shell 则尝试转为 Solid
