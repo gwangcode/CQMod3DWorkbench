@@ -1,82 +1,16 @@
-import numpy as np
-import FreeCAD
-import Part
-from .utils import _is_vec, _vec, _tessellate, _tri_mesh_to_shape
-from .deformers import brep_twist_z
-
+# 找到 class Shape 的 __init__，修改为：
 class Shape:
-    def __init__(self, part_shape, is_transform=False, op=None, children=None, doc_name=None, transform_data=None, primitive_data=None):
+    def __init__(self, part_shape, is_transform=False, op=None, children=None, doc_name=None, transform_data=None, primitive_data=None, parameters=None):
         self.shape = part_shape
         self._is_transform = is_transform
         self.op = op                  
         self.children = children or [] 
         self.doc_name = doc_name      
         self.transform_data = transform_data 
-        # 【核心新增】记录它是哪种原生图元，以及参数
         self.primitive_data = primitive_data 
+        self.parameters = parameters or {} # 新增：记录具体参数
 
-    def __add__(self, other):
-        if _is_vec(other, 3):
-            res = self.shape.copy()
-            res.translate(FreeCAD.Vector(*other))
-            return Shape(res, op="transform", children=[self], transform_data=("translate", other))
-        if isinstance(other, Shape):
-            if self.op == "fuse": return Shape(self.shape.fuse(other.shape).removeSplitter(), op="fuse", children=self.children + [other])
-            return Shape(self.shape.fuse(other.shape).removeSplitter(), op="fuse", children=[self, other])
-        if isinstance(other, Part.Shape):
-            if self.op == "fuse": return Shape(self.shape.fuse(other).removeSplitter(), op="fuse", children=self.children + [Shape(other)])
-            return Shape(self.shape.fuse(other).removeSplitter(), op="fuse", children=[self, Shape(other)])
-        raise ValueError(f"Unsupported operand for +: {type(other)}")
-
-    def __sub__(self, other):
-        if isinstance(other, Shape):
-            return Shape(self.shape.cut(other.shape).removeSplitter(), op="cut", children=[self, other])
-        if isinstance(other, Part.Shape):
-            return Shape(self.shape.cut(other).removeSplitter(), op="cut", children=[self, Shape(other)])
-        if _is_vec(other, 3):
-            res = self.shape.copy()
-            res.translate(FreeCAD.Vector(-other[0], -other[1], -other[2]))
-            return Shape(res, op="transform", children=[self], transform_data=("translate", (-other[0], -other[1], -other[2])))
-        raise ValueError(f"Unsupported operand for -: {type(other)}")
-
-    def __mul__(self, other):
-        if isinstance(other, Shape):
-            if self.op == "common": return Shape(self.shape.common(other.shape).removeSplitter(), op="common", children=self.children + [other])
-            return Shape(self.shape.common(other.shape).removeSplitter(), op="common", children=[self, other])
-        if isinstance(other, Part.Shape):
-            if self.op == "common": return Shape(self.shape.common(other).removeSplitter(), op="common", children=self.children + [Shape(other)])
-            return Shape(self.shape.common(other).removeSplitter(), op="common", children=[self, Shape(other)])
-        if isinstance(other, (int, float)):
-            res = self.shape.copy()
-            mat = FreeCAD.Matrix()
-            mat.scale(other, other, other)
-            return Shape(res.transformGeometry(mat), op="transform", children=[self], transform_data=("scale", (other, other, other)))
-        if _is_vec(other, 3):
-            res = self.shape.copy()
-            mat = FreeCAD.Matrix()
-            mat.scale(other[0], other[1], other[2])
-            return Shape(res.transformGeometry(mat), op="transform", children=[self], transform_data=("scale", other))
-        raise ValueError(f"Unsupported operand for *: {type(other)}")
-
-    def __matmul__(self, angles):
-        if not _is_vec(angles, 3): raise ValueError("Rotation expects [rx, ry, rz]")
-        ax, ay, az = _vec(angles)
-        res = self.shape.copy()
-        res.rotate(FreeCAD.Vector(0,0,0), FreeCAD.Vector(1,0,0), np.degrees(ax))
-        res.rotate(FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,1,0), np.degrees(ay))
-        res.rotate(FreeCAD.Vector(0,0,0), FreeCAD.Vector(0,0,1), np.degrees(az))
-        return Shape(res, op="transform", children=[self], transform_data=("rotate", angles))
-
-    def __mod__(self, factors):
-        if not _is_vec(factors, 6): raise ValueError("Shear expects 6 factors")
-        sxy, sxz, syx, syz, szx, szy = _vec(factors)
-        mat = FreeCAD.Matrix()
-        mat.A12, mat.A13 = sxy, sxz
-        mat.A21, mat.A23 = syx, syz
-        mat.A31, mat.A32 = szx, szy
-        res = self.shape.copy()
-        return Shape(res.transformGeometry(mat), op="transform", children=[self], transform_data=("shear", factors))
-
+    # 修改 __xor__ 以记录参数：
     def __xor__(self, angles):
         if not _is_vec(angles, 3): raise ValueError("Twist expects 3 angles")
         ax, ay, az = _vec(angles)
@@ -85,21 +19,6 @@ class Shape:
             try:
                 res = brep_twist_z(self.shape, az)
                 if res is not None:
-                    return Shape(res, op="twist", children=[self])
+                    return Shape(res, op="twist", children=[self], parameters={"angles": angles})
             except Exception: pass
-
-        verts, faces = _tessellate(self.shape, tol=0.1)
-        new_verts = np.empty_like(verts)
-        for i, (x, y, z) in enumerate(verts):
-            tx, ty, tz = ax * x, ay * y, az * z
-            Rx = np.array([[1, 0, 0], [0, np.cos(tx), -np.sin(tx)], [0, np.sin(tx),  np.cos(tx)]])
-            Ry = np.array([[np.cos(ty), 0, np.sin(ty)], [0, 1, 0], [-np.sin(ty), 0, np.cos(ty)]])
-            Rz = np.array([[np.cos(tz), -np.sin(tz), 0], [np.sin(tz),  np.cos(tz), 0], [0, 0, 1]])
-            new_verts[i] = (Rx @ Ry @ Rz) @ np.array([x, y, z])
-        return Shape(_tri_mesh_to_shape(new_verts, faces), op="twist", children=[self])
-
-    def __getattr__(self, name):
-        return getattr(self.shape, name)
-
-    def __repr__(self):
-        return repr(self.shape)
+        # ... (下面的网格扭转同样加上 parameters={"angles": angles}) ...
