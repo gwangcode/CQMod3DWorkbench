@@ -1,20 +1,53 @@
+import numpy as np
 import FreeCAD
 import Part
+import Mesh
+import MeshPart
 
-def show(shape, name="Mod3D_Object"):
-    """直接将 FreeCAD Part.Shape 显示在文档中"""
-    if not isinstance(shape, Part.Shape):
-        FreeCAD.Console.PrintError("Input is not a Part.Shape!\n")
-        return None
-        
-    doc = FreeCAD.ActiveDocument
-    if not doc:
-        docs = FreeCAD.listDocuments()
-        doc = list(docs.values())[0] if docs else FreeCAD.newDocument()
-            
-    obj = doc.addObject("Part::Feature", name)
-    obj.Shape = shape
-    doc.recompute()
-    
-    FreeCAD.Console.PrintMessage(f"✅ Created FreeCAD object: {name}\n")
-    return obj
+
+def _is_vec(x, n: int) -> bool:
+    """支持 FreeCAD.Vector / list / tuple / ndarray"""
+    if isinstance(x, FreeCAD.Vector):
+        return n == 3
+    try:
+        arr = np.asarray(x)
+        return arr.ndim == 1 and arr.size == n and np.issubdtype(arr.dtype, np.number)
+    except Exception:
+        return False
+
+
+def _vec(x) -> tuple:
+    return tuple(float(v) for v in x)
+
+
+def _tessellate(shape, tol: float = 0.1):
+    """FreeCAD Shape -> (verts, faces)"""
+    if isinstance(shape, FreeCAD.Vector) or isinstance(shape, (int, float)):
+        return np.array([]), []
+    verts, faces = shape.tessellate(tol)
+    vert_array = np.array([[v.x, v.y, v.z] for v in verts])
+    return vert_array, faces
+
+
+def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
+    """使用 FreeCAD 的 MeshPart 将三角网格转回 B-rep 实体"""
+    mesh = Mesh.Mesh()
+    for f in faces:
+        mesh.addFacet(
+            Mesh.MeshPoint(Mesh.Vector(*verts[f[0]])),
+            Mesh.MeshPoint(Mesh.Vector(*verts[f[1]])),
+            Mesh.MeshPoint(Mesh.Vector(*verts[f[2]]))
+        )
+    shape = MeshPart.meshToShape(mesh, 0.1)
+    # 若是 Shell 则尝试转为 Solid
+    if hasattr(shape, 'ShapeType') and shape.ShapeType != "Solid":
+        try:
+            shape = Part.makeSolid(shape)
+        except Exception:
+            pass
+    return shape
+
+
+def extremes(part) -> tuple:
+    bb = part.BoundBox
+    return bb.XMin, bb.XMax, bb.YMin, bb.YMax, bb.ZMin, bb.ZMax
