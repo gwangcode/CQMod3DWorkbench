@@ -21,7 +21,6 @@ try:
 except ImportError as e:
     FreeCAD.Console.PrintError(f"Failed to load mod3d: {e}\n")
 
-
 class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -132,11 +131,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Sections = 30
             return new_obj
 
-        elif node.op == "noise_wire":
-            new_obj = doc.addObject("Part::Feature", get_next_name("NoiseWire"))
-            new_obj.Shape = node.shape
-            return new_obj
-
         elif getattr(node, 'primitive_data', None):
             p_type = node.primitive_data["type"]
             p_params = node.primitive_data["params"]
@@ -171,7 +165,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
             code_line = cursor.selectedText()
-            
             if code_line.startswith(">>> "): code_line = code_line[4:]
             elif code_line.startswith(">>>"): code_line = code_line[3:]
             elif code_line.startswith("... "): code_line = code_line[4:]
@@ -181,8 +174,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
 
-            try:
-                is_complete = codeop.compile_command(full_code, "<input>", "exec") is not None
+            try: is_complete = codeop.compile_command(full_code, "<input>", "exec") is not None
             except (SyntaxError, ValueError): is_complete = True
 
             if is_complete:
@@ -202,7 +194,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 is_shape = isinstance(result, (mod3d.Shape, Part.Shape))
-
                 if is_shape:
                     consumed = list(dict.fromkeys(self._consumed_targets))
                     while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
@@ -239,7 +230,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     QtCore.QTimer.singleShot(10, do_show)
                 elif result is not None:
                     self.write(repr(result) + "\n")
-
             except SyntaxError:
                 try: exec(compile(code, "<terminal>", "exec"), self.local_vars)
                 except Exception: self.write(f"{traceback.format_exc()}\n")
