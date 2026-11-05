@@ -66,3 +66,12 @@ def test_mod3d_operator_patch():
     # 测试旋转 (@ [rx, ry, rz])
     rotated = box @ [0, 0, 1.5708] # 旋转 90 度
     assert isinstance(rotated, Part.Shape)
+    
+def test_mod3d_primitives():
+    """测试原生的图元生成"""
+    box = mod3d.cube(10)
+    # 代理类里透传了 Volume
+    assert abs(box.Volume - 1000.0) < 1e-3
+    
+    sph = mod3d.sphere(5)
+    assert abs(sph.Volume - (4/3 * 3.14159 * 125)) < 1.0
