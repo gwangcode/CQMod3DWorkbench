@@ -14,8 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
     - name: Setup Micromamba (Conda)
       uses: mamba-org/setup-micromamba@v1
@@ -36,7 +35,7 @@ jobs:
       if: runner.os == 'Linux'
       shell: micromamba-shell {0}
       run: |
-        export PYTHONPATH=${{ github.workspace }}:$CONDA_PREFIX/lib/freecad/lib:$CONDA_PREFIX/lib/freecad/Mod:$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/python3.11/site-packages:$PYTHONPATH
+        export PYTHONPATH=${{ github.workspace }}:$CONDA_PREFIX/lib/freecad/lib:$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/python3.11/site-packages:$PYTHONPATH
         export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$CONDA_PREFIX/lib/freecad/lib:$LD_LIBRARY_PATH
         export QT_QPA_PLATFORM=offscreen
         xvfb-run -a pytest tests/ -v
@@ -45,6 +44,5 @@ jobs:
       if: runner.os == 'Windows'
       shell: bash -l {0}
       run: |
-        # Windows 直接跑（Conda 已处理好环境变量）
-        export PYTHONPATH="${{ github.workspace }};$CONDA_PREFIX/Lib/site-packages"
+        export PYTHONPATH="${{ github.workspace }};$CONDA_PREFIX/Library/lib;$CONDA_PREFIX/Lib/site-packages"
         pytest tests/ -v
