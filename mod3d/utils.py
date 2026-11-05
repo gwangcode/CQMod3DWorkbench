@@ -32,14 +32,16 @@ def _tessellate(shape, tol: float = 0.1):
 def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
     """使用 FreeCAD 的 MeshPart 将三角网格转回 B-rep 实体"""
     mesh = Mesh.Mesh()
+    
+    # 【核心修复】先批量创建 MeshPoint，直接传入 3 个 float，避免 Base.Vector 转换错误
+    mesh_points = [Mesh.MeshPoint(float(v[0]), float(v[1]), float(v[2])) for v in verts]
+    
+    # 然后直接添加面
     for f in faces:
-        mesh.addFacet(
-            # 【核心修复】将 Mesh.Vector 替换为 FreeCAD.Vector
-            Mesh.MeshPoint(FreeCAD.Vector(*verts[f[0]])),
-            Mesh.MeshPoint(FreeCAD.Vector(*verts[f[1]])),
-            Mesh.MeshPoint(FreeCAD.Vector(*verts[f[2]]))
-        )
+        mesh.addFacet(mesh_points[f[0]], mesh_points[f[1]], mesh_points[f[2]])
+        
     shape = MeshPart.meshToShape(mesh, 0.1)
+    
     # 若是 Shell 则尝试转为 Solid
     if hasattr(shape, 'ShapeType') and shape.ShapeType != "Solid":
         try:
