@@ -66,9 +66,51 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         
         if hasattr(obj, "Shape") and obj.Shape:
             self._consumed_targets.append(name)
-            return mod3d.Shape(obj.Shape)
+            # 【核心修改】传入 doc_name 标记这个形状的来源
+            return mod3d.Shape(obj.Shape, doc_name=name)
         else:
             raise TypeError(f"对象 '{name}' 不是一个有效的几何体。")
+
+    def _build_tree(self, node, doc):
+        """递归解析运算树，生成 FreeCAD 原生节点"""
+        def get_next_name(base):
+            final_name = base
+            idx = 1
+            while doc.getObject(final_name):
+                final_name = f"{base}{idx:03d}"
+                idx += 1
+            return final_name
+
+        # 1. 如果是文档里已有的模型，直接返回
+        if getattr(node, 'doc_name', None):
+            return doc.getObject(node.doc_name)
+
+        # 2. 如果是布尔操作节点，递归构建多级树
+        if getattr(node, 'op', None):
+            left_obj = self._build_tree(node.left, doc)
+            right_obj = self._build_tree(node.right, doc)
+            
+            if not left_obj or not right_obj:
+                raise ValueError("构建树失败：找不到子对象")
+
+            if node.op == "fuse":
+                new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
+                new_obj.Shapes = [left_obj, right_obj]
+            elif node.op == "cut":
+                new_obj = doc.addObject("Part::Cut", get_next_name("Cut"))
+                new_obj.Base = left_obj
+                new_obj.Tool = right_obj
+            elif node.op == "common":
+                new_obj = doc.addObject("Part::MultiCommon", get_next_name("Common"))
+                new_obj.Shapes = [left_obj, right_obj]
+            return new_obj
+        
+        # 3. 如果是叶子节点（终端直接生成的形状，比如 sphere(20)）
+        temp = doc.addObject("Part::Feature", get_next_name("TempFeature"))
+        temp.Shape = node.shape
+        if hasattr(temp, 'ViewObject') and temp.ViewObject:
+            temp.ViewObject.Visibility = False
+        return temp
 
     def write(self, text):
         try:
@@ -138,7 +180,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 if is_shape:
                     consumed = list(dict.fromkeys(self._consumed_targets))
                     
-                    # 生成全新独立对象的默认名字
                     while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
                         self.model_counter += 1
                     next_name = f"model_{self.model_counter}"
@@ -147,12 +188,10 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     def do_show():
                         doc = FreeCAD.ActiveDocument
                         try:
-                            # 记录原模型属性
                             old_obj = doc.getObject(consumed[0]) if consumed else None
                             old_color = old_obj.ViewObject.ShapeColor if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
                             old_transparency = old_obj.ViewObject.Transparency if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
 
-                            # 智能生成节点名称
                             def get_next_name(base):
                                 final_name = base
                                 idx = 1
@@ -162,78 +201,53 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 return final_name
 
                             # ==========================================
-                            # 1. 纯新建：生成 model_x
+                            # 1. 解析多级操作树（如果存在）
                             # ==========================================
-                            if not consumed:
+                            if getattr(result, 'op', None) and not getattr(result, '_is_transform', False):
+                                root_obj = self._build_tree(result, doc)
+                                if root_obj:
+                                    for name in consumed:
+                                        obj = doc.getObject(name)
+                                        if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
+                                            obj.ViewObject.Visibility = False
+                                    # 继承颜色
+                                    if old_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
+                                        if old_color: root_obj.ViewObject.ShapeColor = old_color
+                                        if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
+                                    doc.recompute()
+
+                            # ==========================================
+                            # 2. 纯新建
+                            # ==========================================
+                            elif not consumed:
                                 new_obj = show(raw_shape, name=next_name)
                                 doc.recompute()
                                     
                             # ==========================================
-                            # 2. 非破坏性：隐藏原模型，生成父子特征节点
+                            # 3. 单对象变换与非破坏性形变
                             # ==========================================
                             else:
-                                # 隐藏所有参与运算的原模型
                                 for name in consumed:
                                     obj = doc.getObject(name)
                                     if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
                                         obj.ViewObject.Visibility = False
                                 
                                 old_objs = [doc.getObject(n) for n in consumed if doc.getObject(n)]
+                                op_name = "Feature"
+                                if "apply_noise" in code: op_name = "Noise"
+                                elif "^" in code: op_name = "Twist"
+                                elif "array" in code: op_name = "Array"
+                                elif "@" in code: op_name = "Rotate"
+                                elif "*" in code: op_name = "Scale"
+                                elif "+" in code and ("[" in code or "(" in code): op_name = "Translate"
                                 
-                                # 2.1 纯布尔运算（两个 part 之间）
-                                if len(consumed) == 2 and code.count("part(") == 2:
-                                    if "+" in code:
-                                        new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
-                                        new_obj.Shapes = old_objs
-                                    elif "-" in code:
-                                        new_obj = doc.addObject("Part::Cut", get_next_name("Cut"))
-                                        new_obj.Base = old_objs[0]
-                                        new_obj.Tool = old_objs[1]
-                                    elif "*" in code:
-                                        new_obj = doc.addObject("Part::MultiCommon", get_next_name("Common"))
-                                        new_obj.Shapes = old_objs
-
-                                # 2.2 混合布尔（一个 part 加一个原生生成函数，如 part("A") - sphere(15)）
-                                elif ("-" in code or "+" in code or "*" in code) and len(consumed) == 1:
-                                    temp_feature = doc.addObject("Part::Feature", get_next_name("TempTool"))
-                                    temp_feature.Shape = raw_shape
-                                    if hasattr(temp_feature, 'ViewObject') and temp_feature.ViewObject:
-                                        temp_feature.ViewObject.Visibility = False
-                                        
-                                    if "-" in code:
-                                        new_obj = doc.addObject("Part::Cut", get_next_name("Cut"))
-                                        if code.strip().startswith(f'part("{consumed[0]}")'):
-                                            new_obj.Base = old_objs[0]
-                                            new_obj.Tool = temp_feature
-                                        else:
-                                            new_obj.Base = temp_feature
-                                            new_obj.Tool = old_objs[0]
-                                    elif "+" in code:
-                                        new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
-                                        new_obj.Shapes = old_objs + [temp_feature]
-                                    elif "*" in code:
-                                        new_obj = doc.addObject("Part::MultiCommon", get_next_name("Common"))
-                                        new_obj.Shapes = old_objs + [temp_feature]
+                                new_obj = doc.addObject("Part::Feature", get_next_name(op_name))
+                                new_obj.Shape = raw_shape
                                 
-                                # 2.3 单对象变换与形变（全部非破坏性！生成独立特征）
-                                else:
-                                    op_name = "Feature"
-                                    if "apply_noise" in code: op_name = "Noise"
-                                    elif "^" in code: op_name = "Twist"
-                                    elif "array" in code: op_name = "Array"
-                                    elif "@" in code: op_name = "Rotate"
-                                    elif "*" in code: op_name = "Scale"
-                                    elif "+" in code and ("[" in code or "(" in code): op_name = "Translate"
-                                    
-                                    new_obj = doc.addObject("Part::Feature", get_next_name(op_name))
-                                    new_obj.Shape = raw_shape
-                                    
-                                    # 添加来源属性，让用户在 Data 面板能看到它的“爹”是谁
-                                    if consumed:
-                                        new_obj.addProperty("App::PropertyLinkList", "Sources", "Base", "Source objects")
-                                        new_obj.Sources = old_objs
+                                if consumed:
+                                    new_obj.addProperty("App::PropertyLinkList", "Sources", "Base", "Source objects")
+                                    new_obj.Sources = old_objs
                                 
-                                # 继承颜色
                                 if old_obj and hasattr(new_obj, 'ViewObject') and new_obj.ViewObject:
                                     if old_color: new_obj.ViewObject.ShapeColor = old_color
                                     if old_transparency is not None: new_obj.ViewObject.Transparency = old_transparency
