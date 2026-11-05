@@ -5,14 +5,14 @@ import types
 import glob
 from unittest.mock import MagicMock
 
-def add_freecad_to_path():
-    if 'CONDA_PREFIX' in os.environ:
-        prefix = os.environ['CONDA_PREFIX']
-        for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib')]:
-            if os.path.exists(p) and p not in sys.path: sys.path.append(p)
+# def add_freecad_to_path():
+#     if 'CONDA_PREFIX' in os.environ:
+#         prefix = os.environ['CONDA_PREFIX']
+#         for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib')]:
+#             if os.path.exists(p) and p not in sys.path: sys.path.append(p)
 
-add_freecad_to_path()
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# add_freecad_to_path()
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 class DummyQPlainTextEdit:
     def __init__(self, *args, **kwargs): pass
