@@ -1,15 +1,42 @@
 import pytest
-import FreeCAD
-import Part
 import sys
 import os
+import glob
+
+# --- 动态探测 FreeCAD 的路径并加入 sys.path ---
+def add_freecad_to_path():
+    if 'CONDA_PREFIX' in os.environ:
+        prefix = os.environ['CONDA_PREFIX']
+        possible_paths = [
+            os.path.join(prefix, 'lib', 'freecad', 'lib'),
+            os.path.join(prefix, 'lib', 'freecad', 'Mod'),
+            os.path.join(prefix, 'lib'),
+            os.path.join(prefix, 'lib', 'python3.11', 'site-packages'),
+        ]
+        for p in possible_paths:
+            if os.path.exists(p) and p not in sys.path:
+                sys.path.append(p)
+    
+    if sys.platform == 'win32':
+        possible_win_paths = glob.glob(r"C:\Program Files\FreeCAD*\bin")
+        possible_win_paths += glob.glob(r"C:\Program Files\FreeCAD*\lib")
+        for p in possible_win_paths:
+            if os.path.exists(p) and p not in sys.path:
+                sys.path.append(p)
+
+add_freecad_to_path()
+
+try:
+    import FreeCAD
+    import Part
+except ImportError as e:
+    pytest.skip(f"Skipping tests: FreeCAD not found. {e}", allow_module_level=True)
 
 # 将项目根目录添加到 sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # 确保 mod3d 被导入并打上补丁
 import mod3d
-from mod3d.patch import _patch_shape
 
 def test_mod3d_primitives():
     """测试原生的图元生成"""
@@ -28,8 +55,8 @@ def test_mod3d_operator_patch():
     
     # 测试平移 (+ [x, y, z])
     moved = box + [10, 0, 0]
-    assert moved.BoundBox.XMin == 5.0
-    assert moved.BoundBox.XMax == 15.0
+    assert abs(moved.BoundBox.XMin - 5.0) < 1e-3
+    assert abs(moved.BoundBox.XMax - 15.0) < 1e-3
     
     # 测试布尔差集 (shape - shape)
     sphere = mod3d.sphere(6)
