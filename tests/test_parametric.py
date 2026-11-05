@@ -6,28 +6,28 @@ import glob
 # ==========================================
 # 动态探测 FreeCAD 路径（兼容 Windows/Linux）
 # ==========================================
-def add_freecad_to_path():
-    if 'CONDA_PREFIX' in os.environ:
-        prefix = os.environ['CONDA_PREFIX']
-        possible_paths = [
-            os.path.join(prefix, 'lib', 'freecad', 'lib'),
-            os.path.join(prefix, 'lib', 'freecad', 'Mod'),
-            os.path.join(prefix, 'lib'),
-            os.path.join(prefix, 'lib', 'python3.11', 'site-packages'),
-            os.path.join(prefix, 'Library', 'lib'),
-            os.path.join(prefix, 'Library', 'bin'),
-            os.path.join(prefix, 'Lib', 'site-packages'),
-        ]
-        for p in possible_paths:
-            if os.path.exists(p) and p not in sys.path:
-                sys.path.append(p)
+# def add_freecad_to_path():
+#     if 'CONDA_PREFIX' in os.environ:
+#         prefix = os.environ['CONDA_PREFIX']
+#         possible_paths = [
+#             os.path.join(prefix, 'lib', 'freecad', 'lib'),
+#             os.path.join(prefix, 'lib', 'freecad', 'Mod'),
+#             os.path.join(prefix, 'lib'),
+#             os.path.join(prefix, 'lib', 'python3.11', 'site-packages'),
+#             os.path.join(prefix, 'Library', 'lib'),
+#             os.path.join(prefix, 'Library', 'bin'),
+#             os.path.join(prefix, 'Lib', 'site-packages'),
+#         ]
+#         for p in possible_paths:
+#             if os.path.exists(p) and p not in sys.path:
+#                 sys.path.append(p)
 
-    if sys.platform == 'win32':
-        for p in glob.glob(r"C:\Program Files\FreeCAD*\bin"):
-            if p not in sys.path: sys.path.append(p)
+#     if sys.platform == 'win32':
+#         for p in glob.glob(r"C:\Program Files\FreeCAD*\bin"):
+#             if p not in sys.path: sys.path.append(p)
 
-add_freecad_to_path()
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# add_freecad_to_path()
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 try:
     import FreeCAD
