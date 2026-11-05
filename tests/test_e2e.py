@@ -4,13 +4,14 @@ import os
 import types
 from unittest.mock import MagicMock
 
-# 假 PySide 环境
 class DummyQPlainTextEdit:
+    NoWrap = 0
     def __init__(self, *args, **kwargs): pass
     def setStyleSheet(self, *args, **kwargs): pass
     def insertPlainText(self, *args, **kwargs): pass
     def moveCursor(self, *args, **kwargs): pass
     def textCursor(self): return MagicMock()
+    def setLineWrapMode(self, mode): pass
 
 fake_pyside = types.ModuleType("PySide6")
 fake_qtcore = types.ModuleType("PySide6.QtCore")
@@ -40,12 +41,8 @@ def term():
     FreeCAD.closeDocument("E2ETest")
 
 def test_e2e_terminal_execution(term):
-    """测试在终端连续输入代码，验证是否真实生成了 FreeCAD 节点"""
-    
-    # 1. Mock QTimer，让它同步执行，避免异步问题
     terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     
-    # 2. 输入第一行: cube(10)
     term.execute_code("cube(10)")
     
     doc = FreeCAD.ActiveDocument
@@ -54,10 +51,8 @@ def test_e2e_terminal_execution(term):
     assert obj.TypeId == "Part::Feature"
     assert obj.Shape.Volume > 0
     
-    # 3. 输入第二行: part("model_1") - cylinder(2, 15)
     term.execute_code('part("model_1") - cylinder(2, 15)')
     
-    # 验证文档中是否生成了 Cut 节点
     cut_node = None
     for o in doc.Objects:
         if o.TypeId == "Part::Cut":
@@ -67,10 +62,8 @@ def test_e2e_terminal_execution(term):
     assert cut_node is not None, "E2E 执行失败：未生成 Cut 节点"
     assert cut_node.Base.Name == "model_1"
     
-    # 4. 验证原来的 model_1 被保留（非破坏性建模的语义）
     model_1_obj = next((o for o in doc.Objects if o.Name == "model_1"), None)
     assert model_1_obj is not None, "E2E 执行失败：原来的 model_1 被意外删除！"
     
-    # 5. 如果当前环境支持 GUI，验证原模型被隐藏
     if hasattr(model_1_obj, 'ViewObject') and model_1_obj.ViewObject is not None:
         assert model_1_obj.ViewObject.Visibility is False, "E2E 执行失败：原来的 model_1 未被隐藏"
