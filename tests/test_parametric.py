@@ -109,3 +109,73 @@ def test_cascade_parametric_update(clean_doc):
     vol_after_twist_change = root_node.Shape.Volume
     # 改变扭转角度可能会导致体积发生微小变化（取决于几何体形状，此处只验证它发生了更新）
     assert vol_after_twist_change != vol_after_sphere_change, "修改 Twist 参数后，未重新计算！"
+
+def test_extreme_multibranch_cascade(clean_doc):
+    """
+    地狱级测试：多分支、多层级、跨属性级联更新
+    结构：
+    Branch A: Fusion( Box , Sphere )
+    Tool:     Cylinder
+    Top:      Cut( Branch A , Tool )
+    """
+    from terminal import PythonTerminal
+    term = PythonTerminal()
+
+    # 1. 构建底层基础图元
+    box = clean_doc.addObject("Part::Box", "BaseBox")
+    box.Length, box.Width, box.Height = 10, 10, 10
+
+    sphere = clean_doc.addObject("Part::Sphere", "BaseSphere")
+    sphere.Radius = 5
+    # 注意：我们把球体平移到了边缘
+    sphere.Placement.Base = FreeCAD.Vector(10, 0, 0) 
+
+    cyl = clean_doc.addObject("Part::Cylinder", "CutCylinder")
+    cyl.Radius = 3
+    cyl.Height = 20
+
+    # 2. 用 AST 构建复杂的树逻辑： (Box + Sphere) - Cylinder
+    s_box = mod3d.Shape(box.Shape, doc_name="BaseBox")
+    s_sphere = mod3d.Shape(sphere.Shape, doc_name="BaseSphere")
+    s_cyl = mod3d.Shape(cyl.Shape, doc_name="CutCylinder")
+
+    fusion_ast = s_box + s_sphere
+    final_ast = fusion_ast - s_cyl
+
+    # 3. 落地为 FreeCAD 原生节点树
+    root_node = term._build_tree(final_ast, clean_doc)
+    clean_doc.recompute()
+
+    # 验证拓扑结构
+    assert root_node.TypeId == "Part::Cut"
+    assert root_node.Base.TypeId == "Part::MultiFuse"
+    
+    vol_initial = root_node.Shape.Volume
+
+    # =====================================================
+    # 测试点 1：修改深层分支（Box 的尺寸）
+    # =====================================================
+    box.Length = 30
+    clean_doc.recompute()
+    vol_1 = root_node.Shape.Volume
+    assert vol_1 > vol_initial, "修改深层 Box 长度失败！"
+
+    # =====================================================
+    # 测试点 2：修改深层分支（Sphere 的位置属性 Placement）
+    # =====================================================
+    # 之前球在 (10,0,0)，完全贴在盒子边缘。
+    # 我们现在把它移到 (5,0,0)，让球体深深嵌进盒子里
+    sphere.Placement.Base = FreeCAD.Vector(5, 0, 0)
+    clean_doc.recompute()
+    vol_2 = root_node.Shape.Volume
+    # 球体深入盒子，意味着两者的融合体变小了，挖去圆柱后剩下的体积会变小
+    assert vol_2 < vol_1, "修改深层 Sphere 的 Placement 失败！"
+
+    # =====================================================
+    # 测试点 3：修改中间层刀具（Cylinder 的半径）
+    # =====================================================
+    cyl.Radius = 8
+    clean_doc.recompute()
+    vol_3 = root_node.Shape.Volume
+    # 刀具变粗了，挖掉的肉更多，最终体积必须变小
+    assert vol_3 < vol_2, "修改中间层 Cylinder 半径失败！"
