@@ -16,14 +16,14 @@ class NoiseFeature:
         from mod3d.deformers import apply_noise
         
         base_shape = Shape(obj.Base.Shape)
-        # 强制传入 seed，确保每次重算结果一致
         result = apply_noise(
-            base_shape,
-            density=obj.Density,
-            smoothness=obj.Smoothness,
+            base_shape, 
+            density=obj.Density, 
+            smoothness=obj.Smoothness, 
             amplitude=obj.Amplitude,
             seed=obj.Seed
         )
+        # 完美实践：只赋值，不调用任何 recompute
         obj.Shape = result.shape
 
 class ViewProviderNoise:
@@ -32,7 +32,6 @@ class ViewProviderNoise:
     def attach(self, vobj): self.ViewObject = vobj
     def updateData(self, fp, prop): pass
     def onChanged(self, vp, prop): pass
-
 
 class TwistFeature:
     def __init__(self, obj):
