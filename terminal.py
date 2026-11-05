@@ -165,7 +165,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 new_obj.Shape = node.shape
                 return new_obj
 
-        # 4. 【核心魔法】参数化噪声与扭转
+        # 4. 参数化噪声与扭转
         elif node.op == "noise":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Noise"))
@@ -280,12 +280,15 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 new_obj = show(result.shape if isinstance(result, mod3d.Shape) else result, name=next_name)
                                 doc.recompute()
                             else:
-                                for name in consumed:
-                                    obj = doc.getObject(name)
-                                    if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
-                                        obj.ViewObject.Visibility = False
-                                
                                 root_obj = self._build_tree(result, doc)
+                                
+                                # 【核心修复】：如果生成的 root_obj 就是原来被消耗的对象（原地破坏性更新），绝对不能隐藏它！
+                                consumed_objs = [doc.getObject(name) for name in consumed]
+                                if root_obj not in consumed_objs:
+                                    for name in consumed:
+                                        obj = doc.getObject(name)
+                                        if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
+                                            obj.ViewObject.Visibility = False
                                 
                                 if old_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
                                     if old_color: root_obj.ViewObject.ShapeColor = old_color
