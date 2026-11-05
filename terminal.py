@@ -171,7 +171,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             pass
 
     def _is_brackets_balanced(self, code):
-        """辅助方法：物理检测括号是否闭合，防止 codeop 抽风"""
         stack = []
         in_string = None
         escape = False
@@ -214,6 +213,60 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.moveCursor(QtGui.QTextCursor.End)
 
     def keyPressEvent(self, event):
+        # ==========================================
+        # 【核心修复】拦截光标移动与退格，保护提示符
+        # ==========================================
+        cursor = self.textCursor()
+        block = cursor.block()
+        line_text = block.text()
+        pos_in_block = cursor.positionInBlock()
+        
+        prompt_len = 0
+        if line_text.startswith(">>> "): prompt_len = 4
+        elif line_text.startswith("... "): prompt_len = 4
+
+        if prompt_len > 0:
+            # 1. 拦截 Home 键
+            if event.key() == QtCore.Qt.Key_Home and not event.modifiers():
+                cursor.clearSelection()
+                cursor.setPosition(block.position() + prompt_len)
+                self.setTextCursor(cursor)
+                return
+
+            # 2. 拦截 左/右 方向键，防止光标或选区跨越提示符
+            if event.key() in (QtCore.Qt.Key_Left, QtCore.Qt.Key_Right):
+                if cursor.hasSelection():
+                    sel_start = cursor.selectionStart()
+                    sel_end = cursor.selectionEnd()
+                    # 如果选区越过了提示符边界，强行将其推回边界
+                    if event.key() == QtCore.Qt.Key_Left and sel_start <= block.position() + prompt_len:
+                        cursor.setPosition(block.position() + prompt_len, QtGui.QTextCursor.MoveAnchor)
+                        cursor.setPosition(sel_end, QtGui.QTextCursor.KeepAnchor)
+                        self.setTextCursor(cursor)
+                        return
+                    elif event.key() == QtCore.Qt.Key_Right and sel_end < block.position() + prompt_len:
+                        cursor.setPosition(block.position() + prompt_len, QtGui.QTextCursor.MoveAnchor)
+                        cursor.setPosition(sel_start, QtGui.QTextCursor.KeepAnchor)
+                        self.setTextCursor(cursor)
+                        return
+                else:
+                    # 无选区时，光标不能退到提示符左侧
+                    if event.key() == QtCore.Qt.Key_Left and pos_in_block <= prompt_len:
+                        return
+
+            # 3. 拦截 Backspace 键
+            if event.key() == QtCore.Qt.Key_Backspace:
+                if not cursor.hasSelection() and pos_in_block <= prompt_len:
+                    return
+                if cursor.hasSelection() and cursor.selectionStart() <= block.position() + prompt_len:
+                    # 如果选区覆盖了提示符，只删除后面的部分
+                    cursor.setPosition(block.position() + prompt_len, QtGui.QTextCursor.MoveAnchor)
+                    self.setTextCursor(cursor)
+                    return
+
+        # ==========================================
+        # 其他快捷键逻辑保持不变
+        # ==========================================
         if event.key() == QtCore.Qt.Key_U and event.modifiers() == QtCore.Qt.ControlModifier:
             self._clear_current_line()
             return
@@ -258,7 +311,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
 
-            # 【核心修复】结合 codeop 和括号匹配双重验证
             is_complete = False
             try: 
                 if codeop.compile_command(full_code, "<input>", "exec") is not None:
