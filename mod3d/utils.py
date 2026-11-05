@@ -2,8 +2,6 @@ import numpy as np
 import FreeCAD
 import Part
 import Mesh
-import MeshPart
-
 
 def _is_vec(x, n: int) -> bool:
     """支持 FreeCAD.Vector / list / tuple / ndarray"""
@@ -15,10 +13,8 @@ def _is_vec(x, n: int) -> bool:
     except Exception:
         return False
 
-
 def _vec(x) -> tuple:
     return tuple(float(v) for v in x)
-
 
 def _tessellate(shape, tol: float = 0.1):
     """FreeCAD Shape -> (verts, faces)"""
@@ -28,12 +24,11 @@ def _tessellate(shape, tol: float = 0.1):
     vert_array = np.array([[v.x, v.y, v.z] for v in verts])
     return vert_array, faces
 
-
 def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
-    """使用 FreeCAD 的 MeshPart 将三角网格转回 B-rep 实体"""
+    """使用 FreeCAD 原生 API 将三角网格转回 B-rep 实体"""
     mesh = Mesh.Mesh()
     
-    # 【核心修复】直接传入 9 个 float，完美避开所有对象类型的兼容性问题
+    # 直接传入 9 个 float 构建三角面，具备最佳兼容性
     for f in faces:
         v0, v1, v2 = verts[f[0]], verts[f[1]], verts[f[2]]
         mesh.addFacet(
@@ -41,17 +36,21 @@ def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
             float(v1[0]), float(v1[1]), float(v1[2]),
             float(v2[0]), float(v2[1]), float(v2[2])
         )
-        
-    shape = MeshPart.meshToShape(mesh, 0.1)
     
-    # 若是 Shell 则尝试转为 Solid
-    if hasattr(shape, 'ShapeType') and shape.ShapeType != "Solid":
-        try:
-            shape = Part.makeSolid(shape)
-        except Exception:
-            pass
+    # 核心修复：使用 Part.Shape().makeShapeFromMesh() 替代不存在的 MeshPart.meshToShape
+    shape = Part.Shape()
+    shape.makeShapeFromMesh(mesh.Topology, 0.1)
+    
+    # 尝试转为实体（Solid），确保后续布尔运算正常运行
+    try:
+        solid = Part.makeSolid(shape)
+        if hasattr(solid, 'ShapeType') and solid.ShapeType == "Solid":
+            shape = solid
+    except Exception:
+        # 如果转换失败，保持原有形状（可能是 Shell）
+        pass
+        
     return shape
-
 
 def extremes(part) -> tuple:
     bb = part.BoundBox
