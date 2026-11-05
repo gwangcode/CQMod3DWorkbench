@@ -60,7 +60,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             raise TypeError(f"对象 '{name}' 不是有效的几何体。")
 
     def _build_tree(self, node, doc):
-        """【终极版】递归解析 AST，生成原生特征树"""
+        """【终极版】递归解析 AST，生成原生特征树，并支持破坏性变换"""
         def get_next_name(base):
             final_name = base
             idx = 1
@@ -93,15 +93,26 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 new_obj.Shapes = child_objs
                 return new_obj
 
-        # 3. 处理变换节点（Transform）
+        # 3. 处理变换节点（Transform）-> 破坏性就地修改
         elif node.op == "transform":
             child_obj = self._build_tree(node.children[0], doc)
-            # 由于 FreeCAD 原生缺乏通用的动态 Transform 特征节点，我们这里生成一个普通 Feature，并把 Sources 挂上
-            new_obj = doc.addObject("Part::Feature", get_next_name("Transform"))
-            new_obj.Shape = node.shape
-            new_obj.addProperty("App::PropertyLinkList", "Sources", "Base", "Source objects")
-            new_obj.Sources = [child_obj]
-            return new_obj
+            transform_type, data = node.transform_data
+
+            if transform_type == "translate":
+                # 【核心：破坏性操作】直接平移原有的对象，不生成新节点！
+                child_obj.Placement.Base = child_obj.Placement.Base + FreeCAD.Vector(*data)
+                return child_obj
+            elif transform_type == "rotate":
+                # 旋转也能原地修改
+                child_obj.Placement.Rotation = child_obj.Placement.Rotation * FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), data[0]) \
+                                               * FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), data[1]) \
+                                               * FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), data[2])
+                return child_obj
+            else:
+                # 缩放和剪切必须烘焙形状，生成新节点
+                new_obj = doc.addObject("Part::Feature", get_next_name("Feature"))
+                new_obj.Shape = node.shape
+                return new_obj
 
         # 4. 处理形变节点（Twist, Noise 等）
         elif node.op:
@@ -112,7 +123,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Sources = [child_obj]
             return new_obj
 
-        # 5. 叶子节点（生成原生函数（如 sphere(20)）直接产生）
+        # 5. 叶子节点
         temp = doc.addObject("Part::Feature", get_next_name("TempFeature"))
         temp.Shape = node.shape
         if hasattr(temp, 'ViewObject') and temp.ViewObject:
@@ -184,13 +195,11 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 new_obj = show(result.shape if isinstance(result, mod3d.Shape) else result, name=next_name)
                                 doc.recompute()
                             else:
-                                # 隐藏参与运算的原模型
                                 for name in consumed:
                                     obj = doc.getObject(name)
                                     if obj and hasattr(obj, 'ViewObject') and obj.ViewObject:
                                         obj.ViewObject.Visibility = False
                                 
-                                # 【核心】调用递归树，生成复杂节点
                                 root_obj = self._build_tree(result, doc)
                                 
                                 if old_obj and hasattr(root_obj, 'ViewObject') and root_obj.ViewObject:
