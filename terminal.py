@@ -85,9 +85,19 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
             
             line_text = cursor.selectedText()
-            current_prompt = self.prompt if not self.buffer else self.continuation_prompt
-            code_line = line_text.replace(current_prompt, "")
             
+            # 【容错修复】清理行首的各种提示符
+            code_line = line_text
+            if code_line.startswith(">>> "):
+                code_line = code_line[4:]
+            elif code_line.startswith(">>>"):
+                code_line = code_line[3:]
+            elif code_line.startswith("... "):
+                code_line = code_line[4:]
+            elif code_line.startswith("..."):
+                code_line = code_line[3:]
+            
+            # 自动纠错中文引号
             code_line = code_line.replace('“', '"').replace('”', '"').replace('‘', "'").replace('’', "'")
             
             self.buffer.append(code_line)
@@ -117,7 +127,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 
-                # 【核心修复】同时判断 mod3d.Shape 和 Part.Shape
                 is_shape = False
                 raw_shape = None
                 if isinstance(result, mod3d.Shape):
@@ -164,7 +173,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     
                     def do_show():
                         try:
-                            new_obj = show(raw_shape, name=clean_name) # 传入解包后的 raw_shape
+                            new_obj = show(raw_shape, name=clean_name)
                             if old_obj and new_obj:
                                 new_obj.Label = old_label
                                 new_obj.Placement = old_placement
