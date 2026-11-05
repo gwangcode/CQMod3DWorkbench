@@ -2,30 +2,21 @@ import pytest
 import sys
 import os
 import types
-import glob
 from unittest.mock import MagicMock
 
-# def add_freecad_to_path():
-#     if 'CONDA_PREFIX' in os.environ:
-#         prefix = os.environ['CONDA_PREFIX']
-#         for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib'), os.path.join(prefix, 'lib')]:
-#             if os.path.exists(p) and p not in sys.path: sys.path.append(p)
-
-# add_freecad_to_path()
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 class DummyQPlainTextEdit:
+    NoWrap = 0
     def __init__(self, *args, **kwargs): pass
     def setStyleSheet(self, *args, **kwargs): pass
     def insertPlainText(self, *args, **kwargs): pass
     def moveCursor(self, *args, **kwargs): pass
     def textCursor(self): return MagicMock()
+    def setLineWrapMode(self, mode): pass
 
 fake_pyside = types.ModuleType("PySide6")
 fake_qtcore = types.ModuleType("PySide6.QtCore")
 fake_qtgui = types.ModuleType("PySide6.QtGui")
 fake_qtwidgets = types.ModuleType("PySide6.QtWidgets")
-
 fake_qtwidgets.QPlainTextEdit = DummyQPlainTextEdit
 fake_qtwidgets.QApplication = MagicMock()
 fake_qtcore.Qt = MagicMock()
