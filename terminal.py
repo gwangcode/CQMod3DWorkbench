@@ -5,6 +5,7 @@ import sys
 import traceback
 import codeop
 import os
+import math
 
 try:
     from PySide6 import QtCore, QtGui, QtWidgets
@@ -49,7 +50,8 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
 
     def _part_func(self, name):
         doc = FreeCAD.ActiveDocument
-        if not doc: raise ValueError("没有活动的 FreeCAD 文档。")
+        if not doc: 
+            raise ValueError("没有活动的 FreeCAD 文档。")
         obj = doc.getObject(name)
         if not obj:
             all_objs = [o.Name for o in doc.Objects]
@@ -69,12 +71,15 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 idx += 1
             return final_name
 
+        # 1. 如果是已有文档的引用，直接返回
         if getattr(node, 'doc_name', None):
             return doc.getObject(node.doc_name)
 
+        # 2. 布尔运算
         if node.op in ["fuse", "cut", "common"]:
             child_objs = [self._build_tree(c, doc) for c in node.children]
-            if not all(child_objs): raise ValueError("构建树失败：找不到子对象")
+            if not all(child_objs): 
+                raise ValueError("构建树失败：找不到子对象")
             if node.op == "fuse":
                 new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
                 new_obj.Shapes = child_objs
@@ -87,23 +92,28 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 new_obj.Shapes = child_objs
             return new_obj
 
+        # 3. 空间变换（平移/旋转原地修改，缩放生成新节点）
         elif node.op == "transform":
             child_obj = self._build_tree(node.children[0], doc)
             t_type, data = node.transform_data
+            
             if t_type == "translate":
+                # 【核心语义】直接修改 Placement，不新建节点
                 child_obj.Placement.Base = child_obj.Placement.Base + FreeCAD.Vector(*data)
                 return child_obj
             elif t_type == "rotate":
+                # 【核心修复】角度需转换为度
                 child_obj.Placement.Rotation = child_obj.Placement.Rotation * \
-                    FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), data[0]) * \
-                    FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), data[1]) * \
-                    FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), data[2])
+                    FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), math.degrees(data[0])) * \
+                    FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), math.degrees(data[1])) * \
+                    FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), math.degrees(data[2]))
                 return child_obj
             else:
                 new_obj = doc.addObject("Part::Feature", get_next_name("Feature"))
                 new_obj.Shape = node.shape
                 return new_obj
 
+        # 4. 参数化噪声
         elif node.op == "noise":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Noise"))
@@ -117,6 +127,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Seed = node.parameters.get("seed", 0)
             return new_obj
 
+        # 4. 参数化扭转
         elif node.op == "twist":
             child_obj = self._build_tree(node.children[0], doc)
             new_obj = doc.addObject("Part::FeaturePython", get_next_name("Twist"))
@@ -131,6 +142,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             new_obj.Sections = 30
             return new_obj
 
+        # 5. 原生参数化图元
         elif getattr(node, 'primitive_data', None):
             p_type = node.primitive_data["type"]
             p_params = node.primitive_data["params"]
@@ -145,6 +157,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 temp.ViewObject.Visibility = False
             return temp
 
+        # 6. 兜底叶子节点
         temp = doc.addObject("Part::Feature", get_next_name("TempFeature"))
         temp.Shape = node.shape
         if hasattr(temp, 'ViewObject') and temp.ViewObject:
@@ -157,7 +170,8 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.insertPlainText(text)
             self.moveCursor(QtGui.QTextCursor.End)
             QtWidgets.QApplication.processEvents()
-        except RuntimeError: pass
+        except RuntimeError: 
+            pass
 
     def keyPressEvent(self, event):
         if event.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
@@ -165,6 +179,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             cursor.movePosition(QtGui.QTextCursor.StartOfLine)
             cursor.movePosition(QtGui.QTextCursor.EndOfLine, QtGui.QTextCursor.KeepAnchor)
             code_line = cursor.selectedText()
+            
             if code_line.startswith(">>> "): code_line = code_line[4:]
             elif code_line.startswith(">>>"): code_line = code_line[3:]
             elif code_line.startswith("... "): code_line = code_line[4:]
@@ -174,12 +189,15 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self.buffer.append(code_line)
             full_code = "\n".join(self.buffer)
 
-            try: is_complete = codeop.compile_command(full_code, "<input>", "exec") is not None
-            except (SyntaxError, ValueError): is_complete = True
+            try: 
+                is_complete = codeop.compile_command(full_code, "<input>", "exec") is not None
+            except (SyntaxError, ValueError): 
+                is_complete = True
 
             if is_complete:
                 self.insertPlainText("\n")
-                if full_code.strip(): self.execute_code(full_code)
+                if full_code.strip(): 
+                    self.execute_code(full_code)
                 self.buffer.clear()
                 self.insertPlainText(self.prompt)
             else:
@@ -194,6 +212,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 is_shape = isinstance(result, (mod3d.Shape, Part.Shape))
+                
                 if is_shape:
                     consumed = list(dict.fromkeys(self._consumed_targets))
                     while FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(f"model_{self.model_counter}"):
@@ -227,12 +246,15 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 doc.recompute()
                         except Exception as e:
                             self.write(f"Show Error: {e}\n")
+                            
                     QtCore.QTimer.singleShot(10, do_show)
                 elif result is not None:
                     self.write(repr(result) + "\n")
             except SyntaxError:
-                try: exec(compile(code, "<terminal>", "exec"), self.local_vars)
-                except Exception: self.write(f"{traceback.format_exc()}\n")
+                try: 
+                    exec(compile(code, "<terminal>", "exec"), self.local_vars)
+                except Exception: 
+                    self.write(f"{traceback.format_exc()}\n")
         except Exception:
             self.write(f"{traceback.format_exc()}\n")
 
