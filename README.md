@@ -11,11 +11,12 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 ## ✨ Features
 
 - **🚀 Zero-Configuration & Blazing Fast**: No external CAD kernels (like CadQuery or OCP) to download. The terminal opens instantly.
-- **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs and beautiful traceback error reporting.
+- **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs, beautiful traceback error reporting, and intelligent syntax checking.
 - **⚡ Operator Overloading Magic**: Directly use Python's math operators on FreeCAD shapes for rapid boolean operations, transformations, and deformations.
 - **🔄 Non-Destructive Parametric Modeling**: All boolean operations and deformations preserve your original models. It automatically generates native FreeCAD nodes (e.g., `Fusion`, `Cut`, `Noise`, `Twist`) and hides the source objects. You can delete the new node at any time to recover the originals!
 - **🧠 Real-Time Updates**: Because we generate native parametric nodes, modifying a base object (like changing a sphere's radius) will automatically cascade and update all downstream boolean or noise operations.
 - **🪨 Procedural Noise**: Apply natural, rocky, or organic textures to regular geometries with a simple function call.
+- **🛡️ Error-Proof Terminal Experience**: Prevents accidental deletion of prompts, intelligent bracket-matching, and friendly error messages instead of intimidating Python Tracebacks.
 
 ## 📦 Installation
 
@@ -87,6 +88,23 @@ apply_noise(part("model_1"), density=0.6, smoothness=1.5, amplitude=0.4)
 # If you drew a sketch and padded it named "BasePad", you can grab it like this:
 part("BasePad") - sphere(5)
 ```
+
+---
+
+## ⌨️ Terminal Shortcuts & Commands
+
+Our terminal is designed to feel just like a native code REPL:
+
+| Shortcut / Command | Action |
+| :--- | :--- |
+| `Up` / `Down` Arrows | Browse command history. |
+| `Ctrl + U` | Clear the current input line. |
+| `Ctrl + Z` | Undo multi-line input (step back to the previous line). |
+| `Enter` | Execute the code (intelligently checks for unclosed brackets). |
+| `Shift + Enter` | Force a new line without executing (enters `...` mode). |
+| `clear` or `cls` | Clear the entire terminal screen. |
+
+*(Note: The terminal automatically protects the `>>> ` prompt. You cannot accidentally delete it with Backspace or move the cursor past it.)*
 
 ---
 
