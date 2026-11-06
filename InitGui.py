@@ -3,35 +3,25 @@ import FreeCADGui
 import os
 import sys
 
+try:
+    from PySide6 import QtWidgets, QtCore, QtGui
+except ImportError:
+    try:
+        from PySide2 import QtWidgets, QtCore, QtGui
+    except ImportError:
+        from PySide import QtWidgets, QtCore, QtGui
 
 class Mod3DWorkbench(FreeCADGui.Workbench):
     MenuText = "Mod3D Terminal"
     ToolTip = "Interactive FreeCAD Python Terminal for Mod3D"
 
     def Initialize(self):
-        # 唯一可靠的插件路径
         plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "Mod3DWorkbench")
-
         if plugin_dir not in sys.path:
             sys.path.append(plugin_dir)
-
-        if not os.path.exists(plugin_dir):
-            FreeCAD.Console.PrintWarning(
-                f"⚠️ [Mod3D] 插件目录不存在: {plugin_dir}\n"
-                f"请检查是否将整个 Mod3DWorkbench 文件夹放到了 Mod 目录中。\n"
-            )
-
         FreeCAD.Console.PrintMessage("🔥 Mod3D Workbench Initialized\n")
 
     def Activated(self):
-        try:
-            from PySide6 import QtWidgets, QtCore
-        except ImportError:
-            try:
-                from PySide2 import QtWidgets, QtCore
-            except ImportError:
-                from PySide import QtWidgets, QtCore
-
         try:
             if 'terminal' in sys.modules:
                 import importlib
@@ -43,27 +33,39 @@ class Mod3DWorkbench(FreeCADGui.Workbench):
 
         main_window = FreeCADGui.getMainWindow()
         existing_dock = main_window.findChild(QtWidgets.QDockWidget, "Mod3DTerminalDock")
-
+        
         if existing_dock:
+            self.terminal = existing_dock.widget()
             existing_dock.show()
+        else:
+            self.terminal = PythonTerminal()
+            self.dock = QtWidgets.QDockWidget("Mod 3D Terminal", main_window)
+            self.dock.setObjectName("Mod3DTerminalDock")
+            self.dock.setWidget(self.terminal)
+            main_window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.dock)
+
+        # ==========================================
+        # 【核心新增】自动注册全局快捷键 Ctrl+Shift+C
+        # ==========================================
+        if not hasattr(self, '_shortcut'):
+            self._shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+C"), main_window)
+            self._shortcut.activated.connect(self._copy_selected_part)
+
+    def _copy_selected_part(self):
+        """抓取左侧选中的对象，并在终端当前光标处插入 part("name")"""
+        sel = FreeCADGui.Selection.getSelection()
+        if not sel:
             return
-
-        self.terminal = PythonTerminal()
-        self.dock = QtWidgets.QDockWidget("Mod 3D Terminal", main_window)
-        self.dock.setObjectName("Mod3DTerminalDock")
-        self.dock.setWidget(self.terminal)
-
-        main_window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.dock)
+        
+        name = sel[0].Name
+        code = f'part("{name}")'
+        
+        # 如果终端已经打开，直接插入到光标处
+        if hasattr(self, 'terminal') and self.terminal:
+            self.terminal.insertPlainText(code)
+            self.terminal.setFocus()
 
     def Deactivated(self):
-        try:
-            from PySide6 import QtWidgets
-        except ImportError:
-            try:
-                from PySide2 import QtWidgets
-            except ImportError:
-                from PySide import QtWidgets
-
         main_window = FreeCADGui.getMainWindow()
         dock = main_window.findChild(QtWidgets.QDockWidget, "Mod3DTerminalDock")
         if dock:
@@ -71,6 +73,5 @@ class Mod3DWorkbench(FreeCADGui.Workbench):
 
     def GetClassName(self):
         return "Gui::PythonWorkbench"
-
 
 FreeCADGui.addWorkbench(Mod3DWorkbench())
