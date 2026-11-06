@@ -35,13 +35,18 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.history = []
         self.history_index = 0
 
-        # 【新增】定义 runf 函数
         def runf(path):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"找不到文件: {path}")
             with open(path, 'r', encoding='utf-8') as f:
-                code = f.read()
-            exec(compile(code, path, 'exec'), self.local_vars)
+                # 读取文件并去掉两端的空白
+                code = f.read().strip()
+            if not code:
+                return
+            
+            # 如果文件只有一行，或者你想完美复用终端的黑魔法（自动生成 model_x 等）
+            # 我们可以直接调用终端核心的 execute_code
+            self.execute_code(code)
             FreeCAD.Console.PrintMessage(f"✅ 已执行脚本: {path}\n")
 
         self.local_vars = {
