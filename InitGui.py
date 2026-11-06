@@ -7,8 +7,8 @@ class Code3D(FreeCADGui.Workbench):
     MenuText = "Code3D Terminal"
     ToolTip = "Interactive FreeCAD Python Terminal for Code3D"
     
-    # 绑定自定义图标
-    Icon = os.path.join(os.path.dirname(__file__), "Resources", "Icons", "Code3D.svg")
+    _plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "Code3D")
+    Icon = os.path.join(_plugin_dir, "Resources", "Icons", "Code3D.svg")
 
     def Initialize(self):
         plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "Code3D")
@@ -73,7 +73,6 @@ class Code3D(FreeCADGui.Workbench):
         name = sel[0].Name
         code = f'part("{name}")'
         
-        # Copy to clipboard only
         try:
             QtWidgets.QApplication.clipboard().setText(code)
             FreeCAD.Console.PrintMessage(f"✅ Copied to clipboard: {code}\n")
@@ -97,5 +96,4 @@ class Code3D(FreeCADGui.Workbench):
     def GetClassName(self):
         return "Gui::PythonWorkbench"
 
-# 注册改名后的类
 FreeCADGui.addWorkbench(Code3D())
