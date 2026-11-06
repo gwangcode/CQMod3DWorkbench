@@ -16,12 +16,10 @@
     
     <license file="LICENSE">MIT</license>
     
-    <!-- 记得把这里的仓库地址改成 Code3D -->
     <url type="repository" branch="main">https://github.com/gwangcode/Code3D</url>
     
     <content>
         <workbench>
-            <!-- 必须和 InitGui.py 里的类名一致 -->
             <classname>Code3DWorkbench</classname>
         </workbench>
     </content>
