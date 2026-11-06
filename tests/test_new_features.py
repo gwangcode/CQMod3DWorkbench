@@ -53,7 +53,6 @@ def term():
     doc = FreeCAD.newDocument("TestDoc")
     FreeCAD.setActiveDocument("TestDoc")
     term = PythonTerminal()
-    # Mock QTimer 让它同步执行
     terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     yield term
     FreeCAD.closeDocument("TestDoc")
@@ -106,7 +105,6 @@ def test_runf(term, tmp_path):
     term.write = MagicMock()
     
     script_file = tmp_path / "my_script.py"
-    # 故意写入两行，测试脚本的自动拆分与最后一行渲染
     script_content = "a = cube(10)\nshow(a, 'TestBox')\n"
     script_file.write_text(script_content)
     
@@ -160,7 +158,6 @@ def test_copy_selected_logic():
     """测试 InitGui 中的复制方法逻辑"""
     import FreeCADGui
     
-    # 动态注入无头环境缺失的 UI 方法
     if not hasattr(FreeCADGui, 'Workbench'):
         FreeCADGui.Workbench = type('Workbench', (object,), {})
     if not hasattr(FreeCADGui, 'addWorkbench'):
@@ -175,12 +172,12 @@ def test_copy_selected_logic():
          patch('FreeCAD.Console.PrintError'), \
          patch('PySide6.QtWidgets.QApplication.clipboard') as mock_clipboard:
          
-        from InitGui import Code3DWorkbench
-        wb = Code3DWorkbench()
+        # 【核心修改】导入并实例化新的类名
+        from InitGui import Code3D
+        wb = Code3D()
         wb.terminal = MagicMock()
         
         with patch.object(FreeCADGui.Selection, 'getSelection', return_value=[mock_obj]):
             wb._copy_selected_part()
             
-        # 验证剪贴板被调用
         mock_clipboard.return_value.setText.assert_called_once_with('part("model_1")')
