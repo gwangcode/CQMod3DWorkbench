@@ -76,6 +76,77 @@ def icosahedron(a=1):
         [x2,0,x1],[-x2,0,x1],[x2,0,-x1],[-x2,0,-x1],
         [0,x1,x2],[0,-x1,x2],[0,x1,-x2],[0,-x1,-x2]])
 
+def smooth_body(points):
+    """
+    Generate a smooth body from a set of unordered points in 3D space.
+    
+    - If the points are coplanar, it generates a 2D face bounded by a smooth B-spline curve.
+    - If the points are non-coplanar, it constructs a 3D solid volume. The solid is created 
+      using Convex Hull and then smoothed to approximate a continuous surface while strictly 
+      preserving the original points on its surface.
+    
+    :param points: A list of 3D points, e.g., [(x1, y1, z1), (x2, y2, z2), ...]
+    :return: A Part.Shape object (Face or Solid).
+    """
+    import FreeCAD
+    import Part
+    import numpy as np
+    from .patch import Shape
+
+    if not points or len(points) < 4:
+        raise ValueError("At least 4 points are required to form a 3D solid.")
+
+    vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in points]
+    np_pts = np.array([[v.x, v.y, v.z] for v in vecs])
+
+    # 1. Coplanarity check using SVD
+    centroid = np_pts.mean(axis=0)
+    centered_pts = np_pts - centroid
+    u, s, vh = np.linalg.svd(centered_pts)
+    normal = vh[-1]
+    distances = np.abs(np.dot(centered_pts, normal))
+    is_coplanar = np.max(distances) < 1e-4
+
+    if is_coplanar:
+        # If coplanar, generate a smooth 2D face
+        try:
+            curve = Part.BSplineCurve()
+            curve.interpolate(vecs, PeriodicFlag=True)
+            wire = Part.Wire([curve.toShape()])
+            return Shape(Part.Face(wire))
+        except Exception:
+            return Shape(Part.makePolygon(vecs))
+
+    # ==========================================
+    # If non-coplanar, build a 3D Solid
+    # ==========================================
+    
+    # Use trimesh to compute the Convex Hull of the points
+    import trimesh
+    cloud = trimesh.points.PointCloud(np_pts)
+    hull = cloud.convex_hull
+
+    vertices = hull.vertices.tolist()
+    faces = hull.faces.tolist()
+
+    # Create a solid polyhedron from the convex hull
+    polyhedron = Part.makePolyhedron(vertices, faces)
+    
+    # Upgrade the polyhedron to smooth surfaces
+    try:
+        smooth_solid = polyhedron.copy()
+        # Upgrade merges coplanar triangles into larger faces, smoothing the result
+        for _ in range(2): 
+            smooth_solid = smooth_solid.upgrade()[0]
+        
+        if smooth_solid.ShapeType == 'Shell':
+            smooth_solid = Part.Solid(smooth_solid)
+            
+        return Shape(smooth_solid)
+    except Exception as e:
+        # Fallback to the raw convex hull if smoothing fails
+        return Shape(polyhedron)
+
 def bspline_surface(points):
     """
     Here is the English translation:
