@@ -34,17 +34,16 @@ from terminal import PythonTerminal
 
 @pytest.fixture
 def term():
-    return PythonTerminal()
-
-def test_invalid_part_name(term):
     doc = FreeCAD.newDocument("EdgeTestDoc")
     FreeCAD.setActiveDocument("EdgeTestDoc")
-    try:
-        with pytest.raises(ValueError) as exc_info:
-            term._part_func("not_exist_model")
-        assert "找不到名为 'not_exist_model' 的对象" in str(exc_info.value)
-    finally:
-        FreeCAD.closeDocument("EdgeTestDoc")
+    yield PythonTerminal()
+    FreeCAD.closeDocument("EdgeTestDoc")
+
+def test_invalid_part_name(term):
+    with pytest.raises(ValueError) as exc_info:
+        term._part_func("not_exist_model")
+    # 断言英文报错
+    assert "Could not find an object named 'not_exist_model'" in str(exc_info.value)
 
 def test_invalid_operator_type():
     box = mod3d.cube(10)
@@ -56,4 +55,5 @@ def test_execute_syntax_error(term):
     term.write = MagicMock()
     term.execute_code("cube(")
     term.write.assert_called_once()
-    assert "语法错误" in term.write.call_args[0][0]
+    # 断言英文报错
+    assert "Syntax error" in term.write.call_args[0][0]
