@@ -1,7 +1,9 @@
 import pytest
 import os
-import xml.etree.ElementTree as ET
 import sys
+import xml.etree.ElementTree as ET
+from unittest.mock import MagicMock
+import importlib.util
 
 # 获取项目根目录
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -41,33 +43,42 @@ def test_icon_file_exists():
 
 def test_initgui_imports():
     """测试 InitGui.py 是否能正常被导入，且没有语法错误"""
-    # 避免在无头环境中运行真实的 GUI 初始化
-    import types
-    from unittest.mock import MagicMock
     
-    # Mock 必要的模块
-    sys.modules['FreeCADGui'] = MagicMock()
-    sys.modules['FreeCAD'] = MagicMock()
-    sys.modules['PySide6'] = MagicMock()
-    sys.modules['PySide6.QtWidgets'] = MagicMock()
-    sys.modules['PySide6.QtCore'] = MagicMock()
-    sys.modules['PySide6.QtGui'] = MagicMock()
-    
-    # 如果 FreeCADGui.Workbench 不存在，注入一个假的
-    if not hasattr(sys.modules['FreeCADGui'], 'Workbench'):
-        sys.modules['FreeCADGui'].Workbench = type('Workbench', (object,), {})
-
-    initgui_path = os.path.join(ROOT_DIR, "InitGui.py")
-    
-    # 动态加载 InitGui.py
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("InitGui", initgui_path)
-    initgui_module = importlib.util.module_from_spec(spec)
+    # ==========================================
+    # 【核心修复】备份当前的模块环境，防止污染其他测试
+    # ==========================================
+    original_modules = dict(sys.modules)
     
     try:
-        spec.loader.exec_module(initgui_module)
-    except Exception as e:
-        pytest.fail(f"❌ InitGui.py 存在语法或导入错误: {e}")
+        # Mock 必要的模块
+        sys.modules['FreeCADGui'] = MagicMock()
+        sys.modules['FreeCAD'] = MagicMock()
+        sys.modules['PySide6'] = MagicMock()
+        sys.modules['PySide6.QtWidgets'] = MagicMock()
+        sys.modules['PySide6.QtCore'] = MagicMock()
+        sys.modules['PySide6.QtGui'] = MagicMock()
         
-    # 验证 Code3D 类是否存在
-    assert hasattr(initgui_module, "Code3D"), "❌ InitGui.py 中找不到名为 'Code3D' 的类"
+        # 如果 FreeCADGui.Workbench 不存在，注入一个假的
+        if not hasattr(sys.modules['FreeCADGui'], 'Workbench'):
+            sys.modules['FreeCADGui'].Workbench = type('Workbench', (object,), {})
+
+        initgui_path = os.path.join(ROOT_DIR, "InitGui.py")
+        
+        # 动态加载 InitGui.py
+        spec = importlib.util.spec_from_file_location("InitGui_Test", initgui_path)
+        initgui_module = importlib.util.module_from_spec(spec)
+        
+        try:
+            spec.loader.exec_module(initgui_module)
+        except Exception as e:
+            pytest.fail(f"❌ InitGui.py 存在语法或导入错误: {e}")
+            
+        # 验证 Code3D 类是否存在
+        assert hasattr(initgui_module, "Code3D"), "❌ InitGui.py 中找不到名为 'Code3D' 的类"
+        
+    finally:
+        # ==========================================
+        # 【核心修复】恢复原先的模块环境
+        # ==========================================
+        sys.modules.clear()
+        sys.modules.update(original_modules)
