@@ -18,6 +18,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 - **🪨 Procedural Noise**: Apply natural, rocky, or organic textures to regular geometries with a simple function call.
 - **🖱️ Smart Object Picking**: Select any object in the FreeCAD tree and press `Ctrl + Shift + C` to instantly drop `part("object_name")` into the terminal.
 - **📜 Script Execution**: Run external Python files directly in the terminal context using `runf("path/to/script.py")`.
+- **🌐 Advanced Surface Generation**: Generate smooth B-Spline surfaces and 3D bodies directly from lists of 2D or 3D points.
 
 ## 📦 Installation
 
@@ -25,7 +26,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 1. Open FreeCAD and go to **Tools → Addon Manager**.
 2. Click the **Cogwheel icon** in the top right corner and select **Custom repositories**.
 3. Add the following URL: `https://github.com/gwangcode/Code3D`
-4. Find **Code3D** in the list and click **Install**.
+4. Find **Code3D Workbench** in the list and click **Install**.
 5. Restart FreeCAD.
 
 ### Method 2: Manual Installation via Git
@@ -101,11 +102,13 @@ Our terminal is designed to feel just like a native code REPL:
 | `Up` / `Down` Arrows | Browse command history. |
 | `Ctrl + U` | Clear the current input line. |
 | `Ctrl + Z` | Undo multi-line input (step back to the previous line). |
-| `Ctrl + Shift + C` | **(Macro)** Selected an object in the tree? Press this to inject `part("name")` into the terminal! |
+| `Ctrl + Shift + C` | **(Global)** Select an object in the tree, press this to copy `part("name")` to clipboard. |
 | `Enter` | Execute the code (intelligently checks for unclosed brackets). |
 | `Shift + Enter` | Force a new line without executing (enters `...` mode). |
 | `clear` or `cls` | Clear the entire terminal screen. |
 | `runf("path")` | Execute an external Python file in the terminal context. |
+
+*(Note: The terminal automatically protects the `>>> ` prompt. You cannot accidentally delete it with Backspace or move the cursor past it.)*
 
 ---
 
@@ -113,7 +116,7 @@ Our terminal is designed to feel just like a native code REPL:
 
 The Code3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy. 2D primitives return a `Shape2d` object which is automatically converted to a `Part.Face` for display.
 
-### 3D Primitives
+### 3D Primitives & Point-Cloud Generators
 
 | Function Signature | Description |
 | :--- | :--- |
@@ -130,13 +133,16 @@ The Code3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D
 | `octahedron(a=1)` | Creates an octahedron (8 faces). |
 | `dodecahedron(a=1)` | Creates a dodecahedron (12 faces). |
 | `icosahedron(a=1)` | Creates an icosahedron (20 faces). |
-| `convex_hull(vertices)` | Creates a convex hull from a list of 3D points `[[x,y,z], ...]`. |
-| `bspline_surface(points)` | Creates a closed B-spline surface from a list of 3D points or a 2D grid of points. |
+| `convex_hull(vertices)` | Creates a convex hull from a list of 3D points. |
+| `bspline_surface(points)` | Creates a closed B-spline surface from a 1D point list or a 2D grid of points. |
+| `smooth_body(points)` | Generates a smooth 3D solid (or 2D face if coplanar) that completely encloses a set of unordered 3D points. |
 
-**Example:**
+**Example: Create a smooth body from scattered points**
 ```python
-# Create a torus and rotate it
-torus(20, 5) @ [1.57, 0, 0]
+# Define some non-coplanar points
+pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
+# Generate a smooth solid passing through these points
+smooth_body(pts)
 ```
 
 ---
@@ -210,7 +216,7 @@ Once a shape is created or retrieved via `part("name")`, you can use the followi
 
 The workbench intercepts `sys.stdout` to display print statements and errors directly in the custom PySide text widget. 
 
-Under the hood, the `code3d` package patches geometry operations to return an Abstract Syntax Tree (AST). When the terminal receives the final result, it recursively translates this AST into native FreeCAD parametric features (like `Part::MultiFuse`, `Part::Cut`, and custom `Part::FeaturePython` for noise/twist). This ensures you get the extreme flexibility of Python scripting combined with the robust parametric history of the FreeCAD GUI.
+Under the hood, the `mod3d` engine patches geometry operations to return an Abstract Syntax Tree (AST). When the terminal receives the final result, it recursively translates this AST into native FreeCAD parametric features (like `Part::MultiFuse`, `Part::Cut`, and custom `Part::FeaturePython` for noise/twist). This ensures you get the extreme flexibility of Python scripting combined with the robust parametric history of the FreeCAD GUI.
 
 ## 📄 License
 
