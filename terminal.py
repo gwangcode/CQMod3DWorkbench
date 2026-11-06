@@ -35,9 +35,19 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.history = []
         self.history_index = 0
 
+        # 【新增】定义 runf 函数
+        def runf(path):
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"找不到文件: {path}")
+            with open(path, 'r', encoding='utf-8') as f:
+                code = f.read()
+            exec(compile(code, path, 'exec'), self.local_vars)
+            FreeCAD.Console.PrintMessage(f"✅ 已执行脚本: {path}\n")
+
         self.local_vars = {
             "App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show,
             "part": self._part_func, "mod3d": mod3d, "V": FreeCAD.Vector,
+            "runf": runf, # 【注入 runf】
         }
         if 'mod3d' in sys.modules:
             for name in dir(mod3d):
@@ -352,7 +362,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             try:
                 result = eval(compile(code, "<terminal>", "eval"), self.local_vars)
                 
-                # 【核心修复】增加对 Shape2d 的处理
                 is_shape = False
                 raw_shape = None
                 
@@ -384,9 +393,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 new_obj = show(raw_shape, name=next_name)
                                 doc.recompute()
                             else:
-                                # 如果输入的是 2D 图形且涉及到了 part() 操作，则需要特殊处理
-                                # 这里暂不支持 2D 图形的非破坏性树构建，因为 FreeCAD 2D 布尔较复杂
-                                # 但如果只是直接组合，可以先把 2D 变 3D 再走 _build_tree
                                 if isinstance(result, Shape2d):
                                     new_obj = show(raw_shape, name=next_name)
                                     doc.recompute()
