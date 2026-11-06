@@ -4,7 +4,6 @@ import os
 import types
 from unittest.mock import MagicMock
 
-# 动态探测 FreeCAD 路径 (兼容 Windows/Linux)
 def add_freecad_to_path():
     if 'CONDA_PREFIX' in os.environ:
         prefix = os.environ['CONDA_PREFIX']
@@ -18,7 +17,6 @@ def add_freecad_to_path():
 add_freecad_to_path()
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# 假 PySide 环境
 class DummyQPlainTextEdit:
     NoWrap = 0
     def __init__(self, *args, **kwargs): pass
@@ -48,66 +46,54 @@ import mod3d
 import terminal
 from terminal import PythonTerminal
 
-# 【关键修复】定义缺失的 term fixture
 @pytest.fixture
 def term():
     doc = FreeCAD.newDocument("SmoothBodyTestDoc")
     FreeCAD.setActiveDocument("SmoothBodyTestDoc")
     term = PythonTerminal()
-    # Mock QTimer 让它同步执行
     terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     yield term
     FreeCAD.closeDocument("SmoothBodyTestDoc")
 
-# ==========================================
-# 测试 1：共面点集生成 2D 曲面
-# ==========================================
 def test_smooth_body_coplanar(term):
     """测试共面点集生成 2D 曲面"""
-    # 这些点全在 Z=0 平面上
+    term.write = MagicMock()  # 【新增】Mock 以捕获错误
     pts = [(0,0,0), (10,0,0), (15,10,0), (10,20,0), (0,20,0), (-5,10,0)]
     
     term.execute_code(f"smooth_body({pts})")
     
+    if term.write.call_count > 0:
+        print("\n=== TERMINAL ERROR ===")
+        print(term.write.call_args[0][0])
+        print("======================\n")
+        
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "未成功生成对象"
     assert obj.Shape.ShapeType == "Face", "共面点应生成平面(Face)"
     assert obj.Shape.isValid(), "生成的面无效"
 
-# ==========================================
-# 测试 2：非共面点集生成 3D 平滑实体
-# ==========================================
 def test_smooth_body_non_coplanar(term):
     """测试非共面点集生成 3D 平滑实体"""
-    # 这些点在空间中有高低起伏
-    pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
-    
-    # 【调试新增】Mock write 函数以捕获错误
     term.write = MagicMock()
+    pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
     
     term.execute_code(f"smooth_body({pts})")
     
-    # 【调试新增】如果有报错，将其打印出来
     if term.write.call_count > 0:
         print("\n=== TERMINAL ERROR ===")
         print(term.write.call_args[0][0])
         print("======================\n")
-    
+        
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "未成功生成对象"
-    
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "非共面点应生成三维实体"
     assert obj.Shape.Volume > 0, "生成的实体体积必须大于 0"
+    assert obj.Shape.isValid(), "生成的平滑实体无效"
 
-# ==========================================
-# 测试 3：点数不足时的异常处理
-# ==========================================
 def test_smooth_body_insufficient_points(term):
     """测试点数不足时的异常处理"""
     term.write = MagicMock()
-    # 只有 3 个点，无法构造成体
     term.execute_code("smooth_body([(0,0,0), (10,0,0), (0,10,0)])")
     
-    # 终端应该捕获到了 ValueError 并打印
     term.write.assert_called_once()
     assert "At least 4 points are required" in term.write.call_args[0][0]
