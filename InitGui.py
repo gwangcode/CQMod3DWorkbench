@@ -54,6 +54,7 @@ class Code3DWorkbench(FreeCADGui.Workbench):
             self._shortcut.activated.connect(self._copy_selected_part)
 
     def _copy_selected_part(self):
+        """Grab the selected object from the tree and copy part("name") to clipboard."""
         try:
             from PySide6 import QtWidgets
         except ImportError:
@@ -69,15 +70,12 @@ class Code3DWorkbench(FreeCADGui.Workbench):
         name = sel[0].Name
         code = f'part("{name}")'
         
+        # Only copy to clipboard, do not insert to terminal
         try:
             QtWidgets.QApplication.clipboard().setText(code)
-            FreeCAD.Console.PrintMessage(f"✅ Copied to Clipboard: {code}\n")
+            FreeCAD.Console.PrintMessage(f"✅ Copied to clipboard: {code}\n")
         except Exception as e:
-            FreeCAD.Console.PrintError(f"Failed to copy to Clipboard: {e}\n")
-            
-        # if hasattr(self, 'terminal') and self.terminal:
-        #     self.terminal.insertPlainText(code)
-        #     self.terminal.setFocus()
+            FreeCAD.Console.PrintError(f"Failed to copy to clipboard: {e}\n")
 
     def Deactivated(self):
         try:
