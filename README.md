@@ -11,12 +11,13 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 ## ✨ Features
 
 - **🚀 Zero-Configuration & Blazing Fast**: No external CAD kernels (like CadQuery or OCP) to download. The terminal opens instantly.
-- **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs, intelligent syntax checking, and a native REPL experience.
+- **💻 Embedded Python Terminal**: A fully functional, dark-themed Python console docked inside FreeCAD. Supports multi-line inputs, intelligent syntax checking, and error-proof prompt protection.
 - **⚡ Operator Overloading Magic**: Directly use Python's math operators on FreeCAD shapes for rapid boolean operations, transformations, and deformations.
 - **🔄 Non-Destructive Parametric Modeling**: All boolean operations and deformations preserve your original models. It automatically generates native FreeCAD nodes (e.g., `Fusion`, `Cut`, `Noise`, `Twist`) and hides the source objects. You can delete the new node at any time to recover the originals!
 - **🧠 Real-Time Updates**: Because we generate native parametric nodes, modifying a base object (like changing a sphere's radius) will automatically cascade and update all downstream boolean or noise operations.
 - **🪨 Procedural Noise**: Apply natural, rocky, or organic textures to regular geometries with a simple function call.
-- **🛡️ Error-Proof Terminal Experience**: Prevents accidental deletion of prompts, intelligent bracket-matching, and friendly error messages instead of intimidating Python Tracebacks.
+- **🖱️ Smart Object Picking**: Select any object in the FreeCAD tree and press `Ctrl + Shift + C` to instantly drop `part("object_name")` into the terminal.
+- **📜 Script Execution**: Run external Python files directly in the terminal context using `runf("path/to/script.py")`.
 
 ## 📦 Installation
 
@@ -83,6 +84,12 @@ part("model_1") + [15, 0, 0]
 apply_noise(part("model_1"), density=0.6, smoothness=1.5, amplitude=0.4)
 ```
 
+**5. Execute an external script:**
+```python
+# Load and run a local .py file directly in the terminal
+runf("D:/projects/my_complex_model.py")
+```
+
 ---
 
 ## ⌨️ Terminal Shortcuts & Commands
@@ -94,17 +101,17 @@ Our terminal is designed to feel just like a native code REPL:
 | `Up` / `Down` Arrows | Browse command history. |
 | `Ctrl + U` | Clear the current input line. |
 | `Ctrl + Z` | Undo multi-line input (step back to the previous line). |
+| `Ctrl + Shift + C` | **(Macro)** Selected an object in the tree? Press this to inject `part("name")` into the terminal! |
 | `Enter` | Execute the code (intelligently checks for unclosed brackets). |
 | `Shift + Enter` | Force a new line without executing (enters `...` mode). |
 | `clear` or `cls` | Clear the entire terminal screen. |
-
-*(Note: The terminal automatically protects the `>>> ` prompt. You cannot accidentally delete it with Backspace or move the cursor past it.)*
+| `runf("path")` | Execute an external Python file in the terminal context. |
 
 ---
 
 ## 🧊 Built-in Primitives Library
 
-The Mod3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy, ready to be displayed or manipulated. 2D primitives return a `Shape2d` object which can be transformed and converted to a face for extrusion.
+The Mod3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy. 2D primitives return a `Shape2d` object which is automatically converted to a `Part.Face` for display.
 
 ### 3D Primitives
 
@@ -135,19 +142,19 @@ torus(20, 5) @ [1.57, 0, 0]
 
 ### 2D Primitives
 
-2D primitives return a `Shape2d` object. To turn a 2D shape into a 3D solid, you can use the `.to_face()` method and extrude it using FreeCAD's native tools, or use them in sweeps/lofts.
+2D primitives return a `Shape2d` object. They are automatically displayed as flat faces. To turn a 2D shape into a 3D solid, you can use the `.extrude()` method.
 
 #### Standard 2D Shapes
 | Function Signature | Description |
 | :--- | :--- |
 | `polygon(R=1, n=6)` | Regular n-sided polygon with circumradius `R`. |
-| `circle(R=1, step=0.1)` | Circle with radius `R`. `step` controls the segment density. |
+| `circle(R=1, step=0.1)` | Circle with radius `R`. `step` controls segment density. |
 | `rectangle(a=2, b=1)` | Rectangle with width `a` and height `b`. |
 | `square(a=1)` | Square with side length `a`. |
-| `parallelogram(a=1, b=1, angle=pi/4)` | Parallelogram with sides `a`, `b`, and angle in radians. |
-| `rhombus(a=1, angle=pi/4)` | Rhombus with side `a` and angle in radians. |
+| `parallelogram(a=1, b=1, angle=pi/4)` | Parallelogram with sides `a`, `b`, and angle. |
+| `rhombus(a=1, angle=pi/4)` | Rhombus with side `a` and angle. |
 | `trapezoid(upper_side=1, lower_side=2, height=1)` | Isosceles trapezoid. |
-| `ellipse(a=2, b=1, step=0.1)` | Ellipse with semi-major axis `a` and semi-minor axis `b`. |
+| `ellipse(a=2, b=1, step=0.1)` | Ellipse with semi-axes `a` and `b`. |
 
 #### Regular Polygons
 `pentagon(R=1)`, `hexagon(R=1)`, `heptagon(R=1)`, `octagon(R=1)`, `nonagon(R=1)`, `decagon(R=1)`.
@@ -173,7 +180,7 @@ torus(20, 5) @ [1.57, 0, 0]
 ```python
 # Create a 2D heart curve, convert it to a face, and extrude it into a 3D solid
 heart_2d = cardioid(10)
-heart_3d = heart_2d.to_face().extrude(FreeCAD.Vector(0, 0, 5))
+heart_3d = heart_2d.to_face().extrude(V(0, 0, 5))
 show(heart_3d, "Heart_Solid")
 ```
 
