@@ -14,7 +14,6 @@ class Mod3DWorkbench(FreeCADGui.Workbench):
         FreeCAD.Console.PrintMessage("🔥 Mod3D Workbench Initialized\n")
 
     def Activated(self):
-        # 【核心修复】在这里动态导入 PySide，确保环境绝对就绪
         try:
             from PySide6 import QtWidgets, QtCore, QtGui
         except ImportError:
@@ -45,9 +44,18 @@ class Mod3DWorkbench(FreeCADGui.Workbench):
             self.dock.setWidget(self.terminal)
             main_window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.dock)
 
-        # 自动注册全局快捷键 Ctrl+Shift+C
+        # ==========================================
+        # 【核心修复】动态兼容 PySide2 / PySide6 的 QShortcut
+        # ==========================================
         if not hasattr(self, '_shortcut'):
-            self._shortcut = QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+C"), main_window)
+            try:
+                # PySide2 环境
+                QShortcut = QtWidgets.QShortcut
+            except AttributeError:
+                # PySide6 环境
+                QShortcut = QtGui.QShortcut
+                
+            self._shortcut = QShortcut(QtGui.QKeySequence("Ctrl+Shift+C"), main_window)
             self._shortcut.activated.connect(self._copy_selected_part)
 
     def _copy_selected_part(self):
