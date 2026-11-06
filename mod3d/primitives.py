@@ -76,6 +76,43 @@ def icosahedron(a=1):
         [x2,0,x1],[-x2,0,x1],[x2,0,-x1],[-x2,0,-x1],
         [0,x1,x2],[0,-x1,x2],[0,x1,-x2],[0,-x1,-x2]])
 
+def bspline_surface(points):
+    """
+    通过空间中给出的若干个点生成闭合 b-spline 闭合曲面。
+    支持两种输入格式：
+    1. 一维点集: [(x1,y1,z1), (x2,y2,z2), ...] 
+       -> 生成一条闭合的 B-spline 曲线，并填充为闭合曲面。
+    2. 二维点阵: [[(x1,y1,z1), (x2,y2,z2), ...], [(x3,y3,z3), ...]]
+       -> 生成一个标准的 B-spline 自由曲面。
+    """
+    import FreeCAD
+    import Part
+    
+    if not points or len(points) == 0:
+        raise ValueError("点集不能为空。")
+
+    # 检查是一维点集还是二维点阵
+    is_1d = len(points[0]) == 3 and isinstance(points[0][0], (int, float))
+    
+    if is_1d:
+        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in points]
+        # 使用 PeriodicFlag=True 保证曲线首尾平滑闭合
+        curve = Part.BSplineCurve()
+        curve.interpolate(vecs, PeriodicFlag=True)
+        
+        # 转换为 Wire 并填充为 Face
+        wire = Part.Wire([curve.toShape()])
+        face = Part.Face(wire)
+        
+        return Shape(face, primitive_data={"type": "bspline_surface_1d", "params": {"points": points}})
+    else:
+        # 二维点阵
+        vecs_2d = [[FreeCAD.Vector(p[0], p[1], p[2]) for p in row] for row in points]
+        surface = Part.BSplineSurface()
+        surface.interpolate(vecs_2d)
+        
+        return Shape(surface.toShape(), primitive_data={"type": "bspline_surface_2d", "params": {"points": points}})
+
 # ==========================================
 # ---- 2D primitives (返回 Shape2d 数据类) ----
 # ==========================================
