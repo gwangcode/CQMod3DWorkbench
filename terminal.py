@@ -37,7 +37,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
 
         def runf(path):
             if not os.path.exists(path):
-                raise FileNotFoundError(f"Unable to find file: {path}")
+                raise FileNotFoundError(f"File not found: {path}")
             with open(path, 'r', encoding='utf-8') as f:
                 code = f.read().strip()
             if not code:
@@ -68,7 +68,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
     def _part_func(self, name):
         doc = FreeCAD.ActiveDocument
         if not doc: 
-            raise ValueError("No active FreeCAD document")
+            raise ValueError("No active FreeCAD document.")
         obj = doc.getObject(name)
         if not obj:
             all_objs = [o.Name for o in doc.Objects]
@@ -77,7 +77,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             self._consumed_targets.append(name)
             return mod3d.Shape(obj.Shape, doc_name=name)
         else:
-            raise TypeError(f"Object '{name}' is not a valid body")
+            raise TypeError(f"Object '{name}' is not a valid geometry.")
 
     def _build_tree(self, node, doc):
         def get_next_name(base):
@@ -94,7 +94,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         if node.op in ["fuse", "cut", "common"]:
             child_objs = [self._build_tree(c, doc) for c in node.children]
             if not all(child_objs): 
-                raise ValueError("Failed to build tree: Sub-object not found.")
+                raise ValueError("Failed to build tree: missing child objects")
             if node.op == "fuse":
                 new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
                 new_obj.Shapes = child_objs
@@ -384,7 +384,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.model_counter += 1
 
                     def do_show():
-                        # 【核心修复】确保在 QTimer 触发时能获取到文档
                         doc = FreeCAD.ActiveDocument
                         if not doc:
                             docs = FreeCAD.listDocuments()
@@ -417,7 +416,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                         if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
                                     doc.recompute()
                         except Exception as e:
-                            self.write(f"❌ Failed to construct {str(e)}\n")
+                            self.write(f"❌ Build failed: {str(e)}\n")
                             
                     QtCore.QTimer.singleShot(10, do_show)
                 elif result is not None:
@@ -432,7 +431,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.write(f"❌ Execution error: {str(e)}\n")
                     
         except Exception as e:
-            self.write(f"❌ Unkown error: {str(e)}\n")
+            self.write(f"❌ Unknown error: {str(e)}\n")
 
     def closeEvent(self, event):
         sys.stdout = self.old_stdout
