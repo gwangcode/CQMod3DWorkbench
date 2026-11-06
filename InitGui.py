@@ -8,7 +8,6 @@ class Code3DWorkbench(FreeCADGui.Workbench):
     ToolTip = "Interactive FreeCAD Python Terminal for Code3D"
 
     def Initialize(self):
-        # 【修改点】插件路径改为 Code3D
         plugin_dir = os.path.join(FreeCAD.getUserAppDataDir(), "Mod", "Code3D")
         if plugin_dir not in sys.path:
             sys.path.append(plugin_dir)
@@ -33,7 +32,6 @@ class Code3DWorkbench(FreeCADGui.Workbench):
             return
 
         main_window = FreeCADGui.getMainWindow()
-        # 【修改点】Dock 的 ID 改为 Code3DTerminalDock
         existing_dock = main_window.findChild(QtWidgets.QDockWidget, "Code3DTerminalDock")
         
         if existing_dock:
@@ -41,7 +39,6 @@ class Code3DWorkbench(FreeCADGui.Workbench):
             existing_dock.show()
         else:
             self.terminal = PythonTerminal()
-            # 【修改点】UI 面板标题改为 Code3D Terminal
             self.dock = QtWidgets.QDockWidget("Code3D Terminal", main_window)
             self.dock.setObjectName("Code3DTerminalDock")
             self.dock.setWidget(self.terminal)
@@ -74,13 +71,13 @@ class Code3DWorkbench(FreeCADGui.Workbench):
         
         try:
             QtWidgets.QApplication.clipboard().setText(code)
-            FreeCAD.Console.PrintMessage(f"✅ 已复制到剪贴板: {code}\n")
+            FreeCAD.Console.PrintMessage(f"✅ Copied to Clipboard: {code}\n")
         except Exception as e:
-            FreeCAD.Console.PrintError(f"复制到剪贴板失败: {e}\n")
+            FreeCAD.Console.PrintError(f"Failed to copy to Clipboard: {e}\n")
             
-        if hasattr(self, 'terminal') and self.terminal:
-            self.terminal.insertPlainText(code)
-            self.terminal.setFocus()
+        # if hasattr(self, 'terminal') and self.terminal:
+        #     self.terminal.insertPlainText(code)
+        #     self.terminal.setFocus()
 
     def Deactivated(self):
         try:
@@ -99,5 +96,4 @@ class Code3DWorkbench(FreeCADGui.Workbench):
     def GetClassName(self):
         return "Gui::PythonWorkbench"
 
-# 【修改点】注册新的类名
 FreeCADGui.addWorkbench(Code3DWorkbench())
