@@ -1,5 +1,5 @@
 # mod3d/__init__.py
-from .patch import Shape  # 导出代理类
+from .patch import Shape
 from .shapes import Shape2d, Shape3d, solenoid
 from .primitives import (
     cuboid, cube, cylinder, cone, sphere, torus, ellipsoid,
