@@ -7,10 +7,8 @@ import Part
 from .utils import _tessellate, _tri_mesh_to_shape
 
 def apply_noise(part, density=0.2, smoothness=2.0, amplitude=0.1, seed=0):
-    """程序化噪声变形。固定 seed 保证重算结果可复现"""
     from .patch import Shape
 
-    # 强制设置种子，若传入 None 则默认用 0
     np.random.seed(int(seed) if seed is not None else 0)
 
     raw_shape = part.shape if hasattr(part, "shape") else part
