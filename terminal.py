@@ -39,20 +39,16 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             if not os.path.exists(path):
                 raise FileNotFoundError(f"找不到文件: {path}")
             with open(path, 'r', encoding='utf-8') as f:
-                # 读取文件并去掉两端的空白
                 code = f.read().strip()
             if not code:
                 return
-            
-            # 如果文件只有一行，或者你想完美复用终端的黑魔法（自动生成 model_x 等）
-            # 我们可以直接调用终端核心的 execute_code
             self.execute_code(code)
             FreeCAD.Console.PrintMessage(f"✅ 已执行脚本: {path}\n")
 
         self.local_vars = {
             "App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show,
             "part": self._part_func, "mod3d": mod3d, "V": FreeCAD.Vector,
-            "runf": runf, # 【注入 runf】
+            "runf": runf,
         }
         if 'mod3d' in sys.modules:
             for name in dir(mod3d):
@@ -388,7 +384,12 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.model_counter += 1
 
                     def do_show():
+                        # 【核心修复】确保在 QTimer 触发时能获取到文档
                         doc = FreeCAD.ActiveDocument
+                        if not doc:
+                            docs = FreeCAD.listDocuments()
+                            doc = list(docs.values())[0] if docs else FreeCAD.newDocument("Mod3D")
+                            
                         try:
                             old_obj = doc.getObject(consumed[0]) if consumed else None
                             old_color = old_obj.ViewObject.ShapeColor if old_obj and hasattr(old_obj, 'ViewObject') and old_obj.ViewObject else None
