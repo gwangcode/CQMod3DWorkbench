@@ -131,6 +131,7 @@ The Mod3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D 
 | `dodecahedron(a=1)` | Creates a dodecahedron (12 faces). |
 | `icosahedron(a=1)` | Creates an icosahedron (20 faces). |
 | `convex_hull(vertices)` | Creates a convex hull from a list of 3D points `[[x,y,z], ...]`. |
+| `bspline_surface(points)` | Creates a closed B-spline surface from a list of 3D points or a 2D grid of points. |
 
 **Example:**
 ```python
