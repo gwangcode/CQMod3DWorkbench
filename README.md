@@ -24,7 +24,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 ### Method 1: Via FreeCAD Addon Manager (Recommended)
 1. Open FreeCAD and go to **Tools → Addon Manager**.
 2. Click the **Cogwheel icon** in the top right corner and select **Custom repositories**.
-3. Add the following URL: `https://github.com/gwangcode/Mod3DWorkbench`
+3. Add the following URL: `https://github.com/gwangcode/Code3D`
 4. Find **Code3D** in the list and click **Install**.
 5. Restart FreeCAD.
 
@@ -32,7 +32,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 1. Navigate to your FreeCAD `Mod` directory. (You can find this by opening the FreeCAD Python console and typing `App.getUserAppDataDir()`).
 2. Clone this repository directly into the `Mod` folder:
    ```bash
-   git clone https://github.com/gwangcode/Mod3DWorkbench.git
+   git clone https://github.com/gwangcode/Code3D.git
    ```
 3. Restart FreeCAD.
 
