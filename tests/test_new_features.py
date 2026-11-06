@@ -63,7 +63,6 @@ def term():
 # ==========================================
 def test_bspline_surface_1d(term):
     """测试一维共面点集生成闭合 B-spline 曲面"""
-    # 修改为共面点集 (Z=0)
     pts = [(0,0,0), (10,0,0), (15,10,0), (10,20,0), (0,20,0), (-5,10,0)]
     
     term.execute_code(f"bspline_surface({pts})")
@@ -133,9 +132,11 @@ def test_copy_selected_logic():
     """测试 InitGui 中的复制方法逻辑"""
     import FreeCADGui
     
-    # 【核心修复】动态注入 FreeCADGui.Workbench，防止无头环境下类继承失败
+    # 【核心修复】动态注入无头环境缺失的 UI 方法
     if not hasattr(FreeCADGui, 'Workbench'):
         FreeCADGui.Workbench = type('Workbench', (object,), {})
+    if not hasattr(FreeCADGui, 'addWorkbench'):
+        FreeCADGui.addWorkbench = MagicMock()
         
     mock_obj = MagicMock()
     mock_obj.Name = "model_1"
