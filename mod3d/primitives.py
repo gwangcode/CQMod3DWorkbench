@@ -90,6 +90,8 @@ def smooth_body(points):
     """
     import FreeCAD
     import Part
+    import Mesh
+    import MeshPart
     import numpy as np
     from .patch import Shape
 
@@ -120,21 +122,33 @@ def smooth_body(points):
     # ==========================================
     # If non-coplanar, build a 3D Solid
     # ==========================================
-    
-    # Use trimesh to compute the Convex Hull of the points
     import trimesh
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
 
-    vertices = hull.vertices.tolist()
-    faces = hull.faces.tolist()
-
-    # Create a solid polyhedron from the convex hull
-    polyhedron = Part.makePolyhedron(vertices, faces)
+    # 【核心修复】使用 Mesh 模块替代不存在的 Part.makePolyhedron
+    mesh = Mesh.Mesh()
+    for f in hull.faces:
+        v0, v1, v2 = hull.vertices[f[0]], hull.vertices[f[1]], hull.vertices[f[2]]
+        mesh.addFacet(
+            float(v0[0]), float(v0[1]), float(v0[2]),
+            float(v1[0]), float(v1[1]), float(v1[2]),
+            float(v2[0]), float(v2[1]), float(v2[2])
+        )
+        
+    shape = Part.Shape()
+    shape.makeShapeFromMesh(mesh.Topology, 0.1)
     
+    # 尝试封闭为实体
+    try:
+        solid = Part.makeSolid(shape)
+        shape = solid
+    except Exception:
+        pass
+
     # Upgrade the polyhedron to smooth surfaces
     try:
-        smooth_solid = polyhedron.copy()
+        smooth_solid = shape.copy()
         # Upgrade merges coplanar triangles into larger faces, smoothing the result
         for _ in range(2): 
             smooth_solid = smooth_solid.upgrade()[0]
@@ -144,8 +158,8 @@ def smooth_body(points):
             
         return Shape(smooth_solid)
     except Exception as e:
-        # Fallback to the raw convex hull if smoothing fails
-        return Shape(polyhedron)
+        # Fallback to the raw solid if smoothing fails
+        return Shape(shape)
 
 def bspline_surface(points):
     """
