@@ -44,22 +44,27 @@ class Mod3DWorkbench(FreeCADGui.Workbench):
             self.dock.setWidget(self.terminal)
             main_window.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.dock)
 
-        # ==========================================
-        # 【核心修复】动态兼容 PySide2 / PySide6 的 QShortcut
-        # ==========================================
+        # 动态兼容 PySide2 / PySide6 的 QShortcut
         if not hasattr(self, '_shortcut'):
             try:
-                # PySide2 环境
                 QShortcut = QtWidgets.QShortcut
             except AttributeError:
-                # PySide6 环境
                 QShortcut = QtGui.QShortcut
                 
             self._shortcut = QShortcut(QtGui.QKeySequence("Ctrl+Shift+C"), main_window)
             self._shortcut.activated.connect(self._copy_selected_part)
 
     def _copy_selected_part(self):
-        """抓取左侧选中的对象，并在终端当前光标处插入 part("name")"""
+        """抓取左侧选中的对象，插入到终端，并复制到剪贴板"""
+        # 为了确保在任何环境下都能找到 QtWidgets，局部导入一次
+        try:
+            from PySide6 import QtWidgets
+        except ImportError:
+            try:
+                from PySide2 import QtWidgets
+            except ImportError:
+                from PySide import QtWidgets
+
         sel = FreeCADGui.Selection.getSelection()
         if not sel:
             return
@@ -67,6 +72,14 @@ class Mod3DWorkbench(FreeCADGui.Workbench):
         name = sel[0].Name
         code = f'part("{name}")'
         
+        # 1. 复制到剪贴板
+        try:
+            QtWidgets.QApplication.clipboard().setText(code)
+            FreeCAD.Console.PrintMessage(f"✅ 已复制到剪贴板: {code}\n")
+        except Exception as e:
+            FreeCAD.Console.PrintError(f"复制到剪贴板失败: {e}\n")
+            
+        # 2. 插入到终端
         if hasattr(self, 'terminal') and self.terminal:
             self.terminal.insertPlainText(code)
             self.terminal.setFocus()
