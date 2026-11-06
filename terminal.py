@@ -15,16 +15,24 @@ except ImportError:
     except ImportError:
         from PySide import QtCore, QtGui, QtWidgets
 
+# ==========================================
+# 【核心修复】恢复全局导入，确保类方法和外部测试能访问
+# ==========================================
+try:
+    import mod3d
+    from mod3d.shapes import Shape2d
+    from mod3d.parametric import NoiseFeature, ViewProviderNoise, TwistFeature, ViewProviderTwist
+    from utils import show
+except ImportError as e:
+    FreeCAD.Console.PrintError(f"Failed to load mod3d: {e}\n")
+
+
 class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
-        
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         
-        # ==========================================
-        # 【核心修复】提前初始化所有基础属性，防止异常导致属性丢失
-        # ==========================================
         self._consumed_targets = []
         self.model_counter = 1
         self.history = []
@@ -32,24 +40,6 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         self.prompt = ">>> "
         self.continuation_prompt = "... "
         self.buffer = []
-        self.local_vars = {}  # 先赋空字典
-
-        # 尝试导入 mod3d
-        mod3d = None
-        Shape2d = None
-        NoiseFeature = None
-        ViewProviderNoise = None
-        TwistFeature = None
-        ViewProviderTwist = None
-        show = None
-
-        try:
-            import mod3d
-            from mod3d.shapes import Shape2d
-            from mod3d.parametric import NoiseFeature, ViewProviderNoise, TwistFeature, ViewProviderTwist
-            from utils import show
-        except ImportError as e:
-            FreeCAD.Console.PrintError(f"Failed to load mod3d: {e}\n")
 
         def runf(path):
             if not os.path.exists(path):
@@ -80,13 +70,12 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             except Exception as e:
                 self.write(f"❌ Script error: {str(e)}\n")
 
-        # 填充 local_vars
         self.local_vars = {
             "App": FreeCAD, "Gui": FreeCADGui, "Part": Part,
             "part": self._part_func, "V": FreeCAD.Vector, "runf": runf,
         }
-        if show: self.local_vars["show"] = show
-        if mod3d:
+        if 'show' in globals(): self.local_vars["show"] = show
+        if 'mod3d' in globals():
             self.local_vars["mod3d"] = mod3d
             for name in dir(mod3d):
                 if not name.startswith("_"):
@@ -401,10 +390,10 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 is_shape = False
                 raw_shape = None
                 
-                if Shape2d and isinstance(result, Shape2d):
+                if 'Shape2d' in globals() and isinstance(result, Shape2d):
                     raw_shape = result.to_face()
                     is_shape = True
-                elif mod3d and isinstance(result, mod3d.Shape):
+                elif 'mod3d' in globals() and isinstance(result, mod3d.Shape):
                     raw_shape = result.shape
                     is_shape = True
                 elif isinstance(result, Part.Shape):
@@ -433,7 +422,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 new_obj = show(raw_shape, name=next_name)
                                 doc.recompute()
                             else:
-                                if Shape2d and isinstance(result, Shape2d):
+                                if 'Shape2d' in globals() and isinstance(result, Shape2d):
                                     new_obj = show(raw_shape, name=next_name)
                                     doc.recompute()
                                 else:
