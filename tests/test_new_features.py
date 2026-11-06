@@ -119,12 +119,11 @@ def test_clear_command(term):
     """测试 clear 命令是否能清空终端"""
     term._cleared = False
     term.clear = MagicMock()
-    term.insertPlainText = MagicMock() # 把方法 Mock 掉，才能检查它被调用了
+    term.insertPlainText = MagicMock()
     
     term.execute_code("clear")
     
     term.clear.assert_called_once()
-    # 验证清屏后是否重新插入了提示符
     term.insertPlainText.assert_called_once_with(">>> ")
 
 # ==========================================
@@ -132,6 +131,12 @@ def test_clear_command(term):
 # ==========================================
 def test_copy_selected_logic():
     """测试 InitGui 中的复制方法逻辑"""
+    import FreeCADGui
+    
+    # 【核心修复】动态注入 FreeCADGui.Workbench，防止无头环境下类继承失败
+    if not hasattr(FreeCADGui, 'Workbench'):
+        FreeCADGui.Workbench = type('Workbench', (object,), {})
+        
     mock_obj = MagicMock()
     mock_obj.Name = "model_1"
     
@@ -140,7 +145,6 @@ def test_copy_selected_logic():
         wb = Code3DWorkbench()
         wb.terminal = MagicMock()
         
-        # 【核心修复】直接 Mock 模块方法
         with patch.object(FreeCADGui, 'Selection', create=True) as mock_sel:
             mock_sel.getSelection.return_value = [mock_obj]
             wb._copy_selected_part()
