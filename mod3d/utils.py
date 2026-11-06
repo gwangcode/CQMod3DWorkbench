@@ -4,7 +4,7 @@ import Part
 import Mesh
 
 def _is_vec(x, n: int) -> bool:
-    """支持 FreeCAD.Vector / list / tuple / ndarray"""
+    """Support FreeCAD.Vector / list / tuple / ndarray"""
     if isinstance(x, FreeCAD.Vector):
         return n == 3
     try:
@@ -25,10 +25,10 @@ def _tessellate(shape, tol: float = 0.1):
     return vert_array, faces
 
 def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
-    """使用 FreeCAD 原生 API 将三角网格转回 B-rep 实体"""
+    """Convert triangular meshes back to B-rep solids using the FreeCAD native API"""
     mesh = Mesh.Mesh()
     
-    # 直接传入 9 个 float 构建三角面，具备最佳兼容性
+    # Constructing a triangle by directly passing 9 floats offers the best compatibility.
     for f in faces:
         v0, v1, v2 = verts[f[0]], verts[f[1]], verts[f[2]]
         mesh.addFacet(
@@ -37,17 +37,16 @@ def _tri_mesh_to_shape(verts, faces, name="CQ_Object"):
             float(v2[0]), float(v2[1]), float(v2[2])
         )
     
-    # 核心修复：使用 Part.Shape().makeShapeFromMesh() 替代不存在的 MeshPart.meshToShape
     shape = Part.Shape()
     shape.makeShapeFromMesh(mesh.Topology, 0.1)
     
-    # 尝试转为实体（Solid），确保后续布尔运算正常运行
+    # Try converting to solids to ensure subsequent boolean operations run smoothly.
     try:
         solid = Part.makeSolid(shape)
         if hasattr(solid, 'ShapeType') and solid.ShapeType == "Solid":
             shape = solid
     except Exception:
-        # 如果转换失败，保持原有形状（可能是 Shell）
+        # If the conversion fails, maintain the original shape (potentially a shell).
         pass
         
     return shape
