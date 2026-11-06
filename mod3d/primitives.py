@@ -6,7 +6,7 @@ from .shapes import Shape2d
 from .patch import Shape  # 引入代理类
 
 # ==========================================
-# ---- 3D primitives (返回 Shape 代理类) ----
+# ---- 3D primitives ----
 # ==========================================
 def cuboid(a=1, b=1, c=1): 
     return Shape(Part.makeBox(a, b, c), primitive_data={"type": "box", "params": {"Length": a, "Width": b, "Height": c}})
@@ -78,12 +78,10 @@ def icosahedron(a=1):
 
 def bspline_surface(points):
     """
-    通过空间中给出的若干个点生成闭合 b-spline 闭合曲面。
-    支持两种输入格式：
-    1. 一维点集: [(x1,y1,z1), (x2,y2,z2), ...] 
-       -> 生成一条闭合的 B-spline 曲线，并尝试填充为面。如果不共面则生成闭合线框。
-    2. 二维点阵: [[(x1,y1,z1), (x2,y2,z2), ...], ...]
-       -> 生成一个标准的 B-spline 自由曲面。
+    Here is the English translation:
+    Generate a closed B-spline closed surface from a given set of points in 3D space. Supports two input formats:
+    1. 1D point set: [(x1, y1, z1), (x2, y2, z2), ...] -> Generates a closed B-spline curve and attempts to fill it into a surface. If the points are non-coplanar, it generates a closed wireframe.
+    2. 2D point grid: [[(x1, y1, z1), (x2, y2, z2), ...], ...] -> Generates a standard B-spline free-form surface.
     """
     import FreeCAD
     import Part
@@ -101,11 +99,11 @@ def bspline_surface(points):
         
         wire = Part.Wire([curve.toShape()])
         try:
-            # 尝试转为面（要求所有点必须共面）
+            #Try converting to a face (requires all points to be coplanar).
             face = Part.Face(wire)
             return Shape(face, primitive_data={"type": "bspline_surface_1d", "params": {"points": points}})
         except Exception:
-            # 如果点不共面，直接返回闭合的线框
+            # If the points are not coplanar, return the closed wireframe directly.
             return Shape(wire, primitive_data={"type": "bspline_surface_1d", "params": {"points": points}})
     else:
         vecs_2d = [[FreeCAD.Vector(p[0], p[1], p[2]) for p in row] for row in points]
@@ -114,7 +112,7 @@ def bspline_surface(points):
         return Shape(surface.toShape(), primitive_data={"type": "bspline_surface_2d", "params": {"points": points}})
 
 # ==========================================
-# ---- 2D primitives (返回 Shape2d 数据类) ----
+# ---- 2D primitives ----
 # ==========================================
 def polygon(R=1, n=6):
     t = np.linspace(0, 2*np.pi, n, endpoint=False)
