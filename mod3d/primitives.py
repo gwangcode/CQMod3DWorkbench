@@ -76,23 +76,23 @@ def icosahedron(a=1):
         [x2,0,x1],[-x2,0,x1],[x2,0,-x1],[-x2,0,-x1],
         [0,x1,x2],[0,-x1,x2],[0,x1,-x2],[0,-x1,-x2]])
 
-def smooth_body(points):
+def smooth_body(points, smooth_iterations=10):
     """
     Generate a smooth body from a set of unordered points in 3D space.
     
-    - If the points are coplanar, it generates a 2D face bounded by a smooth B-spline curve.
-    - If the points are non-coplanar, it constructs a 3D solid volume. The solid is created 
-      using Convex Hull and then smoothed to approximate a continuous surface while strictly 
-      preserving the original points on its surface.
-    
-    :param points: A list of 3D points, e.g., [(x1, y1, z1), (x2, y2, z2), ...]
-    :return: A Part.Shape object (Face or Solid).
+    - If coplanar, generates a 2D face.
+    - If non-coplanar, constructs a 3D solid using Convex Hull, 
+      then applies Laplacian smoothing to make the surface perfectly smooth.
+      
+    :param points: A list of 3D points.
+    :param smooth_iterations: Number of smoothing iterations. Higher = smoother.
     """
     import FreeCAD
     import Part
     import Mesh
     import MeshPart
     import numpy as np
+    import trimesh
     from .patch import Shape
 
     if not points or len(points) < 4:
@@ -101,7 +101,7 @@ def smooth_body(points):
     vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in points]
     np_pts = np.array([[v.x, v.y, v.z] for v in vecs])
 
-    # 1. Coplanarity check using SVD
+    # 1. Coplanarity check
     centroid = np_pts.mean(axis=0)
     centered_pts = np_pts - centroid
     u, s, vh = np.linalg.svd(centered_pts)
@@ -110,7 +110,6 @@ def smooth_body(points):
     is_coplanar = np.max(distances) < 1e-4
 
     if is_coplanar:
-        # If coplanar, generate a smooth 2D face
         try:
             curve = Part.BSplineCurve()
             curve.interpolate(vecs, PeriodicFlag=True)
@@ -119,17 +118,22 @@ def smooth_body(points):
         except Exception:
             return Shape(Part.makePolygon(vecs))
 
-    # ==========================================
-    # If non-coplanar, build a 3D Solid
-    # ==========================================
-    import trimesh
+    # 2. Calculate Convex Hull
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
 
-    # 【核心修复】使用 Mesh 模块替代不存在的 Part.makePolyhedron
+    try:
+        smoothed_mesh = trimesh.smoothing.filter_laplacian(hull, lamb=0.5, iterations=smooth_iterations)
+        vertices = smoothed_mesh.vertices
+        faces = smoothed_mesh.faces
+    except Exception:
+        vertices = hull.vertices
+        faces = hull.faces
+
+    # 3. 构建 FreeCAD Mesh
     mesh = Mesh.Mesh()
-    for f in hull.faces:
-        v0, v1, v2 = hull.vertices[f[0]], hull.vertices[f[1]], hull.vertices[f[2]]
+    for f in faces:
+        v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
         mesh.addFacet(
             float(v0[0]), float(v0[1]), float(v0[2]),
             float(v1[0]), float(v1[1]), float(v1[2]),
@@ -139,27 +143,13 @@ def smooth_body(points):
     shape = Part.Shape()
     shape.makeShapeFromMesh(mesh.Topology, 0.1)
     
-    # 尝试封闭为实体
     try:
         solid = Part.makeSolid(shape)
         shape = solid
     except Exception:
         pass
 
-    # Upgrade the polyhedron to smooth surfaces
-    try:
-        smooth_solid = shape.copy()
-        # Upgrade merges coplanar triangles into larger faces, smoothing the result
-        for _ in range(2): 
-            smooth_solid = smooth_solid.upgrade()[0]
-        
-        if smooth_solid.ShapeType == 'Shell':
-            smooth_solid = Part.Solid(smooth_solid)
-            
-        return Shape(smooth_solid)
-    except Exception as e:
-        # Fallback to the raw solid if smoothing fails
-        return Shape(shape)
+    return Shape(shape)
 
 def bspline_surface(points):
     """
