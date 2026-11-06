@@ -1,10 +1,10 @@
-# Mod3D Workbench for FreeCAD
+# Code3D Workbench for FreeCAD
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/1446196752.svg)](https://doi.org/10.5281/zenodo.23964056)
 [![CI](https://github.com/gwangcode/Mod3DWorkbench/actions/workflows/ci.yml/badge.svg)](https://github.com/gwangcode/Mod3DWorkbench/actions/workflows/ci.yml)
 
-An interactive, zero-dependency FreeCAD workbench that provides an embedded Python terminal. It features a built-in geometry manipulation engine (Mod3D) that leverages **pure FreeCAD native `Part` APIs** to enable lightning-fast procedural modeling, real-time parameter updates, and non-destructive history trees.
+An interactive, zero-dependency FreeCAD workbench that provides an embedded Python terminal. It features a built-in geometry manipulation engine (Code3D) that leverages **pure FreeCAD native `Part` APIs** to enable lightning-fast procedural modeling, real-time parameter updates, and non-destructive history trees.
 
 Write Python code directly inside FreeCAD to generate geometry, apply noise deformations, and manipulate existing Parts in real-time.
 
@@ -25,7 +25,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 1. Open FreeCAD and go to **Tools → Addon Manager**.
 2. Click the **Cogwheel icon** in the top right corner and select **Custom repositories**.
 3. Add the following URL: `https://github.com/gwangcode/Mod3DWorkbench`
-4. Find **Mod3D Workbench** in the list and click **Install**.
+4. Find **Code3D** in the list and click **Install**.
 5. Restart FreeCAD.
 
 ### Method 2: Manual Installation via Git
@@ -51,8 +51,8 @@ pip install numpy scipy trimesh shapely
 ## 🚀 Usage
 
 1. Open FreeCAD and create a new document.
-2. Select **Mod3D Terminal** from the Workbench dropdown menu at the top.
-3. The **Mod 3D Terminal** will appear at the bottom of the screen instantly.
+2. Select **Code3D Terminal** from the Workbench dropdown menu at the top.
+3. The **Code3D Terminal** will appear at the bottom of the screen instantly.
 4. Type Python code directly into the terminal and press `Enter`.
 
 ### Example Code
@@ -111,7 +111,7 @@ Our terminal is designed to feel just like a native code REPL:
 
 ## 🧊 Built-in Primitives Library
 
-The Mod3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy. 2D primitives return a `Shape2d` object which is automatically converted to a `Part.Face` for display.
+The Code3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy. 2D primitives return a `Shape2d` object which is automatically converted to a `Part.Face` for display.
 
 ### 3D Primitives
 
@@ -210,7 +210,7 @@ Once a shape is created or retrieved via `part("name")`, you can use the followi
 
 The workbench intercepts `sys.stdout` to display print statements and errors directly in the custom PySide text widget. 
 
-Under the hood, the `mod3d` package patches geometry operations to return an Abstract Syntax Tree (AST). When the terminal receives the final result, it recursively translates this AST into native FreeCAD parametric features (like `Part::MultiFuse`, `Part::Cut`, and custom `Part::FeaturePython` for noise/twist). This ensures you get the extreme flexibility of Python scripting combined with the robust parametric history of the FreeCAD GUI.
+Under the hood, the `code3d` package patches geometry operations to return an Abstract Syntax Tree (AST). When the terminal receives the final result, it recursively translates this AST into native FreeCAD parametric features (like `Part::MultiFuse`, `Part::Cut`, and custom `Part::FeaturePython` for noise/twist). This ensures you get the extreme flexibility of Python scripting combined with the robust parametric history of the FreeCAD GUI.
 
 ## 📄 License
 
