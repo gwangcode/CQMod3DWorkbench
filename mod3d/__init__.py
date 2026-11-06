@@ -8,7 +8,7 @@ from .primitives import (
     pentagon, hexagon, heptagon, octagon, nonagon, decagon, ellipse,
     parabola, hyperbola, spiral, cardioid, cycloid, astroid, catenary,
     epicycloid, hypocycloid, lemniscate, semicircle, sine, tangent,
-    bspline_surface
+    bspline_surface, smooth_body
 )
 from .deformers import apply_noise, apply_noise_wire, brep_twist_z
 from .operations import array_rect, array_polar
