@@ -37,13 +37,13 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
 
         def runf(path):
             if not os.path.exists(path):
-                raise FileNotFoundError(f"找不到文件: {path}")
+                raise FileNotFoundError(f"Unable to find file: {path}")
             with open(path, 'r', encoding='utf-8') as f:
                 code = f.read().strip()
             if not code:
                 return
             self.execute_code(code)
-            FreeCAD.Console.PrintMessage(f"✅ 已执行脚本: {path}\n")
+            FreeCAD.Console.PrintMessage(f"✅ Executed script: {path}\n")
 
         self.local_vars = {
             "App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show,
@@ -68,16 +68,16 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
     def _part_func(self, name):
         doc = FreeCAD.ActiveDocument
         if not doc: 
-            raise ValueError("没有活动的 FreeCAD 文档。")
+            raise ValueError("No active FreeCAD document")
         obj = doc.getObject(name)
         if not obj:
             all_objs = [o.Name for o in doc.Objects]
-            raise ValueError(f"找不到名为 '{name}' 的对象。当前对象有: {', '.join(all_objs)}")
+            raise ValueError(f"Could not find an object named '{name}'. Current objects are: {', '.join(all_objs)}")
         if hasattr(obj, "Shape") and obj.Shape:
             self._consumed_targets.append(name)
             return mod3d.Shape(obj.Shape, doc_name=name)
         else:
-            raise TypeError(f"对象 '{name}' 不是有效的几何体。")
+            raise TypeError(f"Object '{name}' is not a valid body")
 
     def _build_tree(self, node, doc):
         def get_next_name(base):
@@ -94,7 +94,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         if node.op in ["fuse", "cut", "common"]:
             child_objs = [self._build_tree(c, doc) for c in node.children]
             if not all(child_objs): 
-                raise ValueError("构建树失败：找不到子对象")
+                raise ValueError("Failed to build tree: Sub-object not found.")
             if node.op == "fuse":
                 new_obj = doc.addObject("Part::MultiFuse", get_next_name("Fusion"))
                 new_obj.Shapes = child_objs
@@ -417,7 +417,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                         if old_transparency is not None: root_obj.ViewObject.Transparency = old_transparency
                                     doc.recompute()
                         except Exception as e:
-                            self.write(f"❌ 构建失败: {str(e)}\n")
+                            self.write(f"❌ Failed to construct {str(e)}\n")
                             
                     QtCore.QTimer.singleShot(10, do_show)
                 elif result is not None:
@@ -427,12 +427,12 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 try: 
                     exec(compile(code, "<terminal>", "exec"), self.local_vars)
                 except SyntaxError:
-                    self.write("❌ 语法错误: 请检查括号、引号是否闭合，或代码格式是否正确。\n")
+                    self.write("❌ Syntax error: Please check if parentheses and quotation marks are closed, or if the code format is correct.\n")
                 except Exception as e:
-                    self.write(f"❌ 执行错误: {str(e)}\n")
+                    self.write(f"❌ Execution error: {str(e)}\n")
                     
         except Exception as e:
-            self.write(f"❌ 未知错误: {str(e)}\n")
+            self.write(f"❌ Unkown error: {str(e)}\n")
 
     def closeEvent(self, event):
         sys.stdout = self.old_stdout
