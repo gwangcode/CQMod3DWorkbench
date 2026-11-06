@@ -3,7 +3,7 @@ import FreeCAD
 
 def showx(part):
     if hasattr(part, "BoundBox"):
-        # 纯 FreeCAD 显示
+        # FreeCAD display
         if not FreeCAD.ActiveDocument:
             FreeCAD.newDocument()
         obj = FreeCAD.ActiveDocument.addObject("Part::Feature", "Preview")
