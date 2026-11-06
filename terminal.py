@@ -42,29 +42,33 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 code = f.read().strip()
             if not code:
                 return
-            self.execute_code(code)
-            FreeCAD.Console.PrintMessage(f"✅ Executed script: {path}\n")
+            
+            # 【核心修复】拆分多行代码，保障最后一行能被正确渲染
+            lines = code.split('\n')
+            
+            # 如果最后一行是空行或者纯注释，直接把整个文件丢给 exec
+            last_line = lines[-1].strip()
+            if not last_line or last_line.startswith('#'):
+                try:
+                    exec(compile(code, path, 'exec'), self.local_vars)
+                    FreeCAD.Console.PrintMessage(f"✅ Executed script: {path}\n")
+                except Exception as e:
+                    self.write(f"❌ Script error: {str(e)}\n")
+                return
 
-        self.local_vars = {
-            "App": FreeCAD, "Gui": FreeCADGui, "Part": Part, "show": show,
-            "part": self._part_func, "mod3d": mod3d, "V": FreeCAD.Vector,
-            "runf": runf,
-        }
-        if 'mod3d' in sys.modules:
-            for name in dir(mod3d):
-                if not name.startswith("_"): self.local_vars[name] = getattr(mod3d, name)
-
-        self.old_stdout = sys.stdout
-        self.old_stderr = sys.stderr
-        sys.stdout = self
-        sys.stderr = self
-
-        self.prompt = ">>> "
-        self.continuation_prompt = "... "
-        self.buffer = []
-        self.insertPlainText(self.prompt)
-        self.moveCursor(QtGui.QTextCursor.End)
-
+            # 分离出前面的赋值/逻辑代码，和最后一行
+            body_code = '\n'.join(lines[:-1])
+            
+            try:
+                # 1. 运行前面的代码（比如 pts_grid = [...]）
+                if body_code.strip():
+                    exec(compile(body_code, path, 'exec'), self.local_vars)
+                
+                # 2. 把最后一行当作终端输入一样处理（触发自动渲染）
+                self.execute_code(last_line)
+                FreeCAD.Console.PrintMessage(f"✅ Executed script: {path}\n")
+            except Exception as e:
+                self.write(f"❌ Script error: {str(e)}\n")
     def _part_func(self, name):
         doc = FreeCAD.ActiveDocument
         if not doc: 
