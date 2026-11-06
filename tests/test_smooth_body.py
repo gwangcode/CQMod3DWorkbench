@@ -1,5 +1,66 @@
+import pytest
+import sys
+import os
+import types
+from unittest.mock import MagicMock
+
+# 动态探测 FreeCAD 路径 (兼容 Windows/Linux)
+def add_freecad_to_path():
+    if 'CONDA_PREFIX' in os.environ:
+        prefix = os.environ['CONDA_PREFIX']
+        for p in [os.path.join(prefix, 'lib', 'freecad', 'lib'), os.path.join(prefix, 'Library', 'lib'), os.path.join(prefix, 'lib')]:
+            if os.path.exists(p) and p not in sys.path: sys.path.append(p)
+    if sys.platform == 'win32':
+        import glob
+        for p in glob.glob(r"C:\Program Files\FreeCAD*\bin"):
+            if p not in sys.path: sys.path.append(p)
+
+add_freecad_to_path()
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# 假 PySide 环境
+class DummyQPlainTextEdit:
+    NoWrap = 0
+    def __init__(self, *args, **kwargs): pass
+    def setStyleSheet(self, *args, **kwargs): pass
+    def insertPlainText(self, *args, **kwargs): pass
+    def moveCursor(self, *args, **kwargs): pass
+    def textCursor(self): return MagicMock()
+    def setLineWrapMode(self, mode): pass
+
+fake_pyside = types.ModuleType("PySide6")
+fake_qtcore = types.ModuleType("PySide6.QtCore")
+fake_qtgui = types.ModuleType("PySide6.QtGui")
+fake_qtwidgets = types.ModuleType("PySide6.QtWidgets")
+fake_qtwidgets.QPlainTextEdit = DummyQPlainTextEdit
+fake_qtwidgets.QApplication = MagicMock()
+fake_qtcore.Qt = MagicMock()
+fake_qtcore.QTimer = MagicMock()
+fake_qtgui.QTextCursor = MagicMock()
+
+sys.modules.update({'PySide6': fake_pyside, 'PySide6.QtCore': fake_qtcore, 'PySide6.QtGui': fake_qtgui, 'PySide6.QtWidgets': fake_qtwidgets})
+
+if 'terminal' in sys.modules: del sys.modules['terminal']
+
+import FreeCAD
+import Part
+import mod3d
+import terminal
+from terminal import PythonTerminal
+
+# 【关键修复】定义缺失的 term fixture
+@pytest.fixture
+def term():
+    doc = FreeCAD.newDocument("SmoothBodyTestDoc")
+    FreeCAD.setActiveDocument("SmoothBodyTestDoc")
+    term = PythonTerminal()
+    # Mock QTimer 让它同步执行
+    terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
+    yield term
+    FreeCAD.closeDocument("SmoothBodyTestDoc")
+
 # ==========================================
-# 测试 6：平滑实体生成 (smooth_body)
+# 测试 1：共面点集生成 2D 曲面
 # ==========================================
 def test_smooth_body_coplanar(term):
     """测试共面点集生成 2D 曲面"""
@@ -13,6 +74,9 @@ def test_smooth_body_coplanar(term):
     assert obj.Shape.ShapeType == "Face", "共面点应生成平面(Face)"
     assert obj.Shape.isValid(), "生成的面无效"
 
+# ==========================================
+# 测试 2：非共面点集生成 3D 平滑实体
+# ==========================================
 def test_smooth_body_non_coplanar(term):
     """测试非共面点集生成 3D 平滑实体"""
     # 这些点在空间中有高低起伏
@@ -28,12 +92,15 @@ def test_smooth_body_non_coplanar(term):
     assert obj.Shape.Volume > 0, "生成的实体体积必须大于 0"
     assert obj.Shape.isValid(), "生成的平滑实体无效"
 
+# ==========================================
+# 测试 3：点数不足时的异常处理
+# ==========================================
 def test_smooth_body_insufficient_points(term):
     """测试点数不足时的异常处理"""
     term.write = MagicMock()
     # 只有 3 个点，无法构造成体
     term.execute_code("smooth_body([(0,0,0), (10,0,0), (0,10,0)])")
     
-    # 终端应该捕获到了 ValueError
+    # 终端应该捕获到了 ValueError 并打印
     term.write.assert_called_once()
     assert "At least 4 points are required" in term.write.call_args[0][0]
