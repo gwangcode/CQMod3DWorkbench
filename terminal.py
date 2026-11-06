@@ -15,14 +15,6 @@ except ImportError:
     except ImportError:
         from PySide import QtCore, QtGui, QtWidgets
 
-try:
-    import mod3d
-    from mod3d.shapes import Shape2d
-    from mod3d.parametric import NoiseFeature, ViewProviderNoise, TwistFeature, ViewProviderTwist
-    from utils import show
-except ImportError as e:
-    FreeCAD.Console.PrintError(f"Failed to load mod3d: {e}\n")
-
 class PythonTerminal(QtWidgets.QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -30,10 +22,34 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
         
         self.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
         
+        # ==========================================
+        # 【核心修复】提前初始化所有基础属性，防止异常导致属性丢失
+        # ==========================================
         self._consumed_targets = []
         self.model_counter = 1
         self.history = []
         self.history_index = 0
+        self.prompt = ">>> "
+        self.continuation_prompt = "... "
+        self.buffer = []
+        self.local_vars = {}  # 先赋空字典
+
+        # 尝试导入 mod3d
+        mod3d = None
+        Shape2d = None
+        NoiseFeature = None
+        ViewProviderNoise = None
+        TwistFeature = None
+        ViewProviderTwist = None
+        show = None
+
+        try:
+            import mod3d
+            from mod3d.shapes import Shape2d
+            from mod3d.parametric import NoiseFeature, ViewProviderNoise, TwistFeature, ViewProviderTwist
+            from utils import show
+        except ImportError as e:
+            FreeCAD.Console.PrintError(f"Failed to load mod3d: {e}\n")
 
         def runf(path):
             if not os.path.exists(path):
@@ -43,11 +59,9 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
             if not code:
                 return
             
-            # 【核心修复】拆分多行代码，保障最后一行能被正确渲染
             lines = code.split('\n')
-            
-            # 如果最后一行是空行或者纯注释，直接把整个文件丢给 exec
             last_line = lines[-1].strip()
+            
             if not last_line or last_line.startswith('#'):
                 try:
                     exec(compile(code, path, 'exec'), self.local_vars)
@@ -56,19 +70,36 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                     self.write(f"❌ Script error: {str(e)}\n")
                 return
 
-            # 分离出前面的赋值/逻辑代码，和最后一行
             body_code = '\n'.join(lines[:-1])
             
             try:
-                # 1. 运行前面的代码（比如 pts_grid = [...]）
                 if body_code.strip():
                     exec(compile(body_code, path, 'exec'), self.local_vars)
-                
-                # 2. 把最后一行当作终端输入一样处理（触发自动渲染）
                 self.execute_code(last_line)
                 FreeCAD.Console.PrintMessage(f"✅ Executed script: {path}\n")
             except Exception as e:
                 self.write(f"❌ Script error: {str(e)}\n")
+
+        # 填充 local_vars
+        self.local_vars = {
+            "App": FreeCAD, "Gui": FreeCADGui, "Part": Part,
+            "part": self._part_func, "V": FreeCAD.Vector, "runf": runf,
+        }
+        if show: self.local_vars["show"] = show
+        if mod3d:
+            self.local_vars["mod3d"] = mod3d
+            for name in dir(mod3d):
+                if not name.startswith("_"):
+                    self.local_vars[name] = getattr(mod3d, name)
+
+        self.old_stdout = sys.stdout
+        self.old_stderr = sys.stderr
+        sys.stdout = self
+        sys.stderr = self
+
+        self.insertPlainText(self.prompt)
+        self.moveCursor(QtGui.QTextCursor.End)
+
     def _part_func(self, name):
         doc = FreeCAD.ActiveDocument
         if not doc: 
@@ -370,10 +401,10 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                 is_shape = False
                 raw_shape = None
                 
-                if isinstance(result, Shape2d):
+                if Shape2d and isinstance(result, Shape2d):
                     raw_shape = result.to_face()
                     is_shape = True
-                elif isinstance(result, mod3d.Shape):
+                elif mod3d and isinstance(result, mod3d.Shape):
                     raw_shape = result.shape
                     is_shape = True
                 elif isinstance(result, Part.Shape):
@@ -402,7 +433,7 @@ class PythonTerminal(QtWidgets.QPlainTextEdit):
                                 new_obj = show(raw_shape, name=next_name)
                                 doc.recompute()
                             else:
-                                if isinstance(result, Shape2d):
+                                if Shape2d and isinstance(result, Shape2d):
                                     new_obj = show(raw_shape, name=next_name)
                                     doc.recompute()
                                 else:
