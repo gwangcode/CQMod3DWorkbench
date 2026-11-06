@@ -13,7 +13,7 @@ class Shape:
         self.doc_name = doc_name      
         self.transform_data = transform_data 
         self.primitive_data = primitive_data 
-        self.parameters = parameters or {} # 新增：用于记录参数
+        self.parameters = parameters or {}
 
     def __add__(self, other):
         if _is_vec(other, 3):
