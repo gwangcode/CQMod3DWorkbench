@@ -2,12 +2,18 @@ import FreeCAD
 import Part
 
 def show(shape, name="Mod3D_Object"):
-    """
-    将 FreeCAD Part.Shape 直接显示在活动的文档中。
-    这是供终端内部及用户调用的底层显示函数。
-    """
+    """将形状直接显示在活动文档中。兼容 mod3d.Shape 和 Shape2d。"""
+    from mod3d.patch import Shape
+    from mod3d.shapes import Shape2d
+    
+    # 自动解包代理类和 2D 数据类
+    if isinstance(shape, Shape):
+        shape = shape.shape
+    elif isinstance(shape, Shape2d):
+        shape = shape.to_face()
+        
     if not isinstance(shape, Part.Shape):
-        FreeCAD.Console.PrintError("Error: Input is not a valid Part.Shape!\n")
+        FreeCAD.Console.PrintError("Input is not a Part.Shape!\n")
         return None
         
     doc = FreeCAD.ActiveDocument
