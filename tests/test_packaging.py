@@ -17,50 +17,62 @@ def find_tag(root, tag_name):
     return node
 
 def test_package_xml_metadata():
-    """测试 package.xml 的格式和关键元数据是否正确"""
+    """Test package.xml format and key metadata"""
     package_path = os.path.join(ROOT_DIR, "package.xml")
-    assert os.path.exists(package_path), "❌ 根目录下缺少 package.xml 文件"
+    assert os.path.exists(package_path), "❌ Missing package.xml in root directory"
 
     try:
         tree = ET.parse(package_path)
         root = tree.getroot()
     except ET.ParseError as e:
-        pytest.fail(f"❌ package.xml 格式损坏，无法解析: {e}")
+        pytest.fail(f"❌ package.xml is corrupted, unable to parse: {e}")
 
-    # 1. 检查 Maintainer 是否已填写
+    # 1. Check Maintainer
     maintainer = find_tag(root, "maintainer")
-    assert maintainer is not None, "❌ 缺少 <maintainer> 标签"
+    assert maintainer is not None, "❌ Missing <maintainer> tag"
     
-    name = find_tag(maintainer, "name")
-    assert name is not None and name.text.strip() != "", "❌ Maintainer 的名字不能为空"
+    # Smart check: Support both <name> sub-tag or text content
+    name_node = find_tag(maintainer, "name")
+    if name_node is not None:
+        maintainer_name = name_node.text
+    else:
+        maintainer_name = maintainer.text
+        
+    assert maintainer_name and maintainer_name.strip() != "", "❌ Maintainer name cannot be empty"
     
-    email = find_tag(maintainer, "email")
-    assert email is not None and email.text.strip() != "", "❌ Maintainer 的 email 不能为空"
+    # Smart check: Support both <email> sub-tag or email attribute
+    email_node = find_tag(maintainer, "email")
+    if email_node is not None:
+        maintainer_email = email_node.text
+    else:
+        maintainer_email = maintainer.get("email")
+        
+    assert maintainer_email and maintainer_email.strip() != "", "❌ Maintainer email cannot be empty"
 
-    # 2. 检查 Classname 是否与代码一致
+    # 2. Check Classname
     content_node = find_tag(root, "content")
-    assert content_node is not None, "❌ 缺少 <content> 标签"
+    assert content_node is not None, "❌ Missing <content> tag"
     
     workbench_node = find_tag(content_node, "workbench")
-    assert workbench_node is not None, "❌ 缺少 <workbench> 标签"
+    assert workbench_node is not None, "❌ Missing <workbench> tag"
     
     classname = find_tag(workbench_node, "classname")
-    assert classname is not None, "❌ 缺少 <classname> 标签"
-    assert classname.text == "Code3D", "❌ classname 必须与 InitGui.py 中注册的类名 'Code3D' 完全一致"
+    assert classname is not None, "❌ Missing <classname> tag"
+    assert classname.text == "Code3D", "❌ classname must match the class registered in InitGui.py exactly ('Code3D')"
 
-    # 3. 检查 Icon 路径是否已配置
+    # 3. Check Icon
     icon_node = find_tag(root, "icon")
-    assert icon_node is not None, "❌ 缺少 <icon> 标签"
+    assert icon_node is not None, "❌ Missing <icon> tag"
 
 def test_icon_file_exists():
-    """测试图标文件是否真的存在于指定的路径"""
+    """Test if the icon file actually exists at the specified path"""
     icon_rel_path = "Resources/Icons/Code3D.svg"
     icon_abs_path = os.path.join(ROOT_DIR, icon_rel_path)
     
-    assert os.path.exists(icon_abs_path), f"❌ 找不到图标文件: {icon_rel_path}。请检查文件是否已创建且路径拼写正确。"
+    assert os.path.exists(icon_abs_path), f"❌ Icon file not found at: {icon_rel_path}. Check if it has been created and spelled correctly."
 
 def test_initgui_imports():
-    """测试 InitGui.py 是否能正常被导入，且没有语法错误"""
+    """Test if InitGui.py can be imported without syntax errors"""
     
     original_modules = dict(sys.modules)
     
@@ -82,9 +94,9 @@ def test_initgui_imports():
         try:
             spec.loader.exec_module(initgui_module)
         except Exception as e:
-            pytest.fail(f"❌ InitGui.py 存在语法或导入错误: {e}")
+            pytest.fail(f"❌ InitGui.py contains syntax or import errors: {e}")
             
-        assert hasattr(initgui_module, "Code3D"), "❌ InitGui.py 中找不到名为 'Code3D' 的类"
+        assert hasattr(initgui_module, "Code3D"), "❌ Class 'Code3D' not found in InitGui.py"
         
     finally:
         sys.modules.clear()
