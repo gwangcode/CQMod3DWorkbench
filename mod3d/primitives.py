@@ -149,9 +149,6 @@ def smooth_body(points, slices=15):
     hull = cloud.convex_hull
     hull_pts = np.array(hull.vertices)
 
-    # ==========================================
-    # 引擎 A：稀疏点云 -> B-Spline 曲面拟合
-    # ==========================================
     if len(points) < 30:
         center = hull_pts.mean(axis=0)
         centered_hull = hull_pts - center
@@ -189,9 +186,6 @@ def smooth_body(points, slices=15):
         except Exception:
             pass
 
-    # ==========================================
-    # 引擎 B：密集点云 -> Loft 切片放样
-    # ==========================================
     max_slices = max(2, len(points) // 4)
     slices = min(slices, max_slices)
 
@@ -229,16 +223,12 @@ def smooth_body(points, slices=15):
 
     if len(wires) >= 2:
         try:
-            # 【核心修复】强制屏蔽底层 OCC 报错，并检查结果是否有效
             loft_solid = Part.makeLoft(wires, solid=True, ruled=False)
             if loft_solid is not None and loft_solid.isValid():
                 return Shape(loft_solid)
         except Exception:
             pass
 
-    # ==========================================
-    # 引擎 C：兜底细分网格
-    # ==========================================
     smooth_mesh = hull.copy()
     for _ in range(3):
         smooth_mesh = smooth_mesh.subdivide()
