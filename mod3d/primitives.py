@@ -76,21 +76,13 @@ def icosahedron(a=1):
         [x2,0,x1],[-x2,0,x1],[x2,0,-x1],[-x2,0,-x1],
         [0,x1,x2],[0,-x1,x2],[0,x1,-x2],[0,-x1,-x2]])
 
-def smooth_body(points, smooth_iterations=10):
+def smooth_body(points, u_res=30, v_res=30):
     """
-    Generate a smooth body from a set of unordered points in 3D space.
-    
-    - If coplanar, generates a 2D face.
-    - If non-coplanar, constructs a 3D solid using Convex Hull, 
-      then applies Laplacian smoothing to make the surface perfectly smooth.
-      
-    :param points: A list of 3D points.
-    :param smooth_iterations: Number of smoothing iterations. Higher = smoother.
+    Generate a mathematically continuous (C1) B-Spline body from unordered points.
+    Uses spherical parameterization to grid the points, then fits a true B-Spline surface.
     """
     import FreeCAD
     import Part
-    import Mesh
-    import MeshPart
     import numpy as np
     import trimesh
     from .patch import Shape
@@ -107,9 +99,9 @@ def smooth_body(points, smooth_iterations=10):
     u, s, vh = np.linalg.svd(centered_pts)
     normal = vh[-1]
     distances = np.abs(np.dot(centered_pts, normal))
-    is_coplanar = np.max(distances) < 1e-4
-
-    if is_coplanar:
+    
+    # If coplanar, generate a 2D face
+    if np.max(distances) < 1e-4:
         try:
             curve = Part.BSplineCurve()
             curve.interpolate(vecs, PeriodicFlag=True)
@@ -118,38 +110,73 @@ def smooth_body(points, smooth_iterations=10):
         except Exception:
             return Shape(Part.makePolygon(vecs))
 
-    # 2. Calculate Convex Hull
+    # 2. Calculate the Convex Hull to get an enclosing skeleton for all points
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
-
-    try:
-        smoothed_mesh = trimesh.smoothing.filter_laplacian(hull, lamb=0.5, iterations=smooth_iterations)
-        vertices = smoothed_mesh.vertices
-        faces = smoothed_mesh.faces
-    except Exception:
-        vertices = hull.vertices
-        faces = hull.faces
-
-    # 3. 构建 FreeCAD Mesh
-    mesh = Mesh.Mesh()
-    for f in faces:
-        v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
-        mesh.addFacet(
-            float(v0[0]), float(v0[1]), float(v0[2]),
-            float(v1[0]), float(v1[1]), float(v1[2]),
-            float(v2[0]), float(v2[1]), float(v2[2])
-        )
-        
-    shape = Part.Shape()
-    shape.makeShapeFromMesh(mesh.Topology, 0.1)
     
-    try:
-        solid = Part.makeSolid(shape)
-        shape = solid
-    except Exception:
-        pass
+    # 3. Map the convex hull vertices to spherical coordinates for gridding
+    hull_pts = np.array(hull.vertices)
+    center = hull_pts.mean(axis=0)
+    centered_hull = hull_pts - center
+    
+    # Calculate spherical coordinates (longitude/latitude)
+    r = np.linalg.norm(centered_hull, axis=1)
+    theta = np.arccos(np.clip(centered_hull[:, 2] / r, -1.0, 1.0))  # 0 to pi
+    phi = np.arctan2(centered_hull[:, 1], centered_hull[:, 0])      # -pi to pi
+    
+    # 4. Construct a regular U x V grid of points
+    u_vals = np.linspace(0, np.pi, u_res)
+    v_vals = np.linspace(-np.pi, np.pi, v_res)
+    
+    grid_pts = []
+    for u_ang in u_vals:
+        row = []
+        for v_ang in v_vals:
+            # Direction vector for the current spherical angle
+            dir_vec = np.array([
+                np.sin(u_ang) * np.cos(v_ang),
+                np.sin(u_ang) * np.sin(v_ang),
+                np.cos(u_ang)
+            ])
+            
+            # Project all points onto this direction and find the maximum distance to form the envelope
+            projections = np.dot(centered_hull, dir_vec)
+            max_r = np.max(projections)
+            
+            # Restore absolute coordinates
+            pt = center + dir_vec * max_r
+            row.append(FreeCAD.Vector(float(pt[0]), float(pt[1]), float(pt[2])))
+        grid_pts.append(row)
 
-    return Shape(shape)
+    # 5. Fit the grid into a true B-Spline surface (C1 continuous) using interpolation
+    try:
+        surf = Part.BSplineSurface()
+        # Interpolate the 2D point grid with Degree 3 (C2 continuous)
+        surf.interpolate(grid_pts, 3, 3) 
+        
+        # Convert the surface to a Face
+        face = surf.toShape()
+        
+        # Thicken the B-Spline surface into a solid to ensure a closed and watertight body
+        solid = face.thicken(1.0, 1e-5) 
+        if solid.ShapeType == 'CompSolid':
+            solid = solid.Solids[0]
+            
+        return Shape(solid)
+        
+    except Exception as e:
+        FreeCAD.Console.PrintError(f"Failed to fit B-Spline surface: {e}\n")
+        # Fallback: If fitting fails, revert to the raw mesh convex hull
+        import Mesh
+        mesh_obj = Mesh.Mesh()
+        for f in hull.faces:
+            v0, v1, v2 = hull.vertices[f[0]], hull.vertices[f[1]], hull.vertices[f[2]]
+            mesh_obj.addFacet(float(v0[0]), float(v0[1]), float(v0[2]),
+                              float(v1[0]), float(v1[1]), float(v1[2]),
+                              float(v2[0]), float(v2[1]), float(v2[2]))
+        shape = Part.Shape()
+        shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
+        return Shape(Part.makeSolid(shape))
 
 def bspline_surface(points):
     """
