@@ -78,19 +78,15 @@ def icosahedron(a=1):
 
 def smooth_body(points, slices=15):
     """
-    Generate a minimal-face, mathematically smooth B-Spline body from unordered points 
-    using the Loft (ThruSections) algorithm.
-    
-    This method slices the point cloud along the Z-axis, extracts the boundary contour 
-    for each slice, interpolates them as B-Spline wires, and lofts them into a solid body.
-    This results in extremely few faces and perfect C2 surface continuity.
-    
-    :param points: A list of 3D points.
-    :param slices: Number of horizontal slices. Higher = more detail but more faces.
+    Generate a smooth 3D solid body from unordered points.
+    Adaptive algorithm:
+    - For sparse points (< 30): Uses B-Spline surface fitting.
+    - For dense points (>= 30): Uses Loft (ThruSections) algorithm.
     """
     import FreeCAD
     import Part
     import numpy as np
+    import trimesh
     from .patch import Shape
 
     if not points or len(points) < 4:
@@ -114,44 +110,73 @@ def smooth_body(points, slices=15):
         except Exception:
             return Shape(Part.makePolygon([FreeCAD.Vector(*p) for p in points]))
 
-    # 2. Determine the best axis for slicing (the longest bounding box dimension)
+    cloud = trimesh.points.PointCloud(np_pts)
+    hull = cloud.convex_hull
+    hull_pts = np.array(hull.vertices)
+
+    if len(points) < 30:
+        center = hull_pts.mean(axis=0)
+        centered_hull = hull_pts - center
+        
+        r = np.linalg.norm(centered_hull, axis=1)
+        theta = np.arccos(np.clip(centered_hull[:, 2] / (r + 1e-9), -1.0, 1.0))
+        phi = np.arctan2(centered_hull[:, 1], centered_hull[:, 0])
+
+        u_vals = np.linspace(0.05, np.pi - 0.05, 8)
+        v_vals = np.linspace(-np.pi, np.pi, 16)
+        
+        grid_pts = []
+        for u_ang in u_vals:
+            row = []
+            for v_ang in v_vals:
+                dir_vec = np.array([
+                    np.sin(u_ang) * np.cos(v_ang),
+                    np.sin(u_ang) * np.sin(v_ang),
+                    np.cos(u_ang)
+                ])
+                projections = np.dot(centered_hull, dir_vec)
+                max_r = np.max(projections)
+                pt = center + dir_vec * max_r
+                row.append(FreeCAD.Vector(float(pt[0]), float(pt[1]), float(pt[2])))
+            grid_pts.append(row)
+
+        try:
+            surf = Part.BSplineSurface()
+            surf.interpolate(grid_pts, 3, 3) 
+            face = surf.toShape()
+            solid = face.thicken(0.5, 1e-5)
+            if solid.ShapeType == 'CompSolid':
+                solid = solid.Solids[0]
+            return Shape(solid)
+        except Exception:
+            pass # 如果拟合失败，继续走下方的 Loft 引擎
+
+    max_slices = max(2, len(points) // 4)
+    slices = min(slices, max_slices)
+
     bounds = np.max(np_pts, axis=0) - np.min(np_pts, axis=0)
-    axis = np.argmax(bounds) # 0 for X, 1 for Y, 2 for Z
+    axis = np.argmax(bounds)
     
-    # 3. Generate slice levels
     min_val = np.min(np_pts[:, axis])
     max_val = np.max(np_pts[:, axis])
     levels = np.linspace(min_val, max_val, slices)
     
-    # Determine the 2D plane axes
-    if axis == 2:
-        plane_axes = (0, 1) # X, Y
-    elif axis == 1:
-        plane_axes = (0, 2) # X, Z
-    else:
-        plane_axes = (1, 2) # Y, Z
-        
+    plane_axes = (0, 1) if axis == 2 else ((0, 2) if axis == 1 else (1, 2))
     center_2d = np.mean(np_pts[:, plane_axes], axis=0)
     tol = (max_val - min_val) / (slices * 1.5)
 
     wires = []
-    
-    # 4. Process each slice to extract B-Spline contour
     for level in levels:
-        # Find points near the current slice level
         mask = np.abs(np_pts[:, axis] - level) <= tol
         layer_pts = np_pts[mask]
         
-        # Need at least 3 points to form a closed wire
         if len(layer_pts) < 3:
             continue
             
-        # Sort points by polar angle to form a non-self-intersecting loop
         angles = np.arctan2(layer_pts[:, plane_axes[1]] - center_2d[1], 
                             layer_pts[:, plane_axes[0]] - center_2d[0])
         sorted_pts = layer_pts[np.argsort(angles)]
         
-        # Generate smooth B-Spline curve for the contour
         vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in sorted_pts]
         try:
             bspline = Part.BSplineCurve()
@@ -161,32 +186,35 @@ def smooth_body(points, slices=15):
         except Exception:
             continue
 
-    if len(wires) < 2:
-        raise ValueError("Not enough valid slices to perform a loft. Point cloud may be too scattered.")
-
-    # 5. Loft the wires into a solid body
+    if len(wires) >= 2:
+        try:
+            loft_solid = Part.makeLoft(wires, solid=True, ruled=False)
+            return Shape(loft_solid)
+        except Exception:
+            pass
+            
+    smooth_mesh = hull.copy()
+    for _ in range(3):
+        smooth_mesh = smooth_mesh.subdivide()
+        
     try:
-        # solid=True automatically caps the top and bottom with planar faces
-        loft_solid = Part.makeLoft(wires, solid=True, ruled=False)
-        return Shape(loft_solid)
-        
-    except Exception as e:
-        FreeCAD.Console.PrintWarning(f"Loft failed: {e}. Falling back to subdivision mesh.\n")
-        
-        # Fallback to Convex Hull if Loft fails
-        import trimesh
-        import Mesh
-        cloud = trimesh.points.PointCloud(np_pts)
-        hull = cloud.convex_hull
-        mesh_obj = Mesh.Mesh()
-        for f in hull.faces:
-            v0, v1, v2 = hull.vertices[f[0]], hull.vertices[f[1]], hull.vertices[f[2]]
-            mesh_obj.addFacet(float(v0[0]), float(v0[1]), float(v0[2]),
-                              float(v1[0]), float(v1[1]), float(v1[2]),
-                              float(v2[0]), float(v2[1]), float(v2[2]))
-        shape = Part.Shape()
-        shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
-        return Shape(Part.makeSolid(shape))
+        smoothed_mesh = trimesh.smoothing.filter_taubin(smooth_mesh, lamb=0.5, nu=-0.53, iterations=10)
+        vertices = smoothed_mesh.vertices
+        faces = smoothed_mesh.faces
+    except Exception:
+        vertices = hull.vertices
+        faces = hull.faces
+
+    import Mesh
+    mesh_obj = Mesh.Mesh()
+    for f in faces:
+        v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
+        mesh_obj.addFacet(float(v0[0]), float(v0[1]), float(v0[2]),
+                          float(v1[0]), float(v1[1]), float(v1[2]),
+                          float(v2[0]), float(v2[1]), float(v2[2]))
+    shape = Part.Shape()
+    shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
+    return Shape(Part.makeSolid(shape))
 
 def bspline_surface(points):
     """
