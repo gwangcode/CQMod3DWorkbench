@@ -81,9 +81,6 @@ def smooth_body(points, iterations=3):
     Generate a mathematically continuous (C1/C2) perfectly smooth body from unordered points.
     Uses Convex Hull followed by Catmull-Clark Subdivision to achieve a globally smooth surface 
     without any sharp edges.
-    
-    :param points: A list of 3D points.
-    :param iterations: Number of subdivision iterations (higher = smoother, be careful with performance).
     """
     import FreeCAD
     import Part
@@ -118,22 +115,25 @@ def smooth_body(points, iterations=3):
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
 
-    # 3. Apply Catmull-Clark Subdivision for absolute surface continuity
+    # 3. Apply Subdivision and Taubin Smoothing
     try:
-        smooth_mesh = hull.subdivide().subdivide()
-        if iterations >= 3: smooth_mesh = smooth_mesh.subdivide()
-        if iterations >= 4: smooth_mesh = smooth_mesh.subdivide()
-        
-        smooth_mesh.vertices = hull.nearest.on_surface(smooth_mesh.vertices)[0]
-        
+        smooth_mesh = hull.copy()
+        for _ in range(iterations):
+            smooth_mesh = smooth_mesh.subdivide()
+            
+        # Taubin smoothing preserving volume
+        smoothed_mesh = trimesh.smoothing.filter_taubin(smooth_mesh, lamb=0.5, nu=-0.53, iterations=10)
+        vertices = smoothed_mesh.vertices
+        faces = smoothed_mesh.faces
     except Exception as e:
-        FreeCAD.Console.PrintWarning(f"Subdivision failed: {e}, falling back to raw hull.\n")
-        smooth_mesh = hull
+        FreeCAD.Console.PrintWarning(f"Subdivision/Smoothing failed: {e}, falling back to raw hull.\n")
+        vertices = hull.vertices
+        faces = hull.faces
 
     # 4. Convert the smooth mesh into FreeCAD format
     mesh = Mesh.Mesh()
-    for f in smooth_mesh.faces:
-        v0, v1, v2 = smooth_mesh.vertices[f[0]], smooth_mesh.vertices[f[1]], smooth_mesh.vertices[f[2]]
+    for f in faces:
+        v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
         mesh.addFacet(
             float(v0[0]), float(v0[1]), float(v0[2]),
             float(v1[0]), float(v1[1]), float(v1[2]),
@@ -149,7 +149,6 @@ def smooth_body(points, iterations=3):
     except Exception:
         pass
 
-    # 返回包裹好的代理类
     return Shape(shape)
 
 def bspline_surface(points):
