@@ -79,14 +79,15 @@ def test_smooth_body_coplanar(term):
     assert obj.Shape.isValid(), "Generated Face is invalid."
 
 # ==========================================
-# 测试 2：非共面点集生成 3D 高阶自由曲面实体
+# 测试 2：非共面点集生成 3D 高阶自由曲面实体 (Loft 算法)
 # ==========================================
 def test_smooth_body_non_coplanar(term):
-    """Test non-coplanar points generating a watertight 3D solid via subdivision"""
+    """Test non-coplanar points generating a watertight 3D solid via Loft"""
     term.write = MagicMock()
     # A set of 3D points with significant Z-axis variation
-    pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
+    pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5), (5,5,15), (-5,-5,10)]
     
+    # 使用默认的 15 层切片
     term.execute_code(f"smooth_body({pts})")
     
     if term.write.call_count > 0:
@@ -101,29 +102,42 @@ def test_smooth_body_non_coplanar(term):
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Should generate a 3D solid."
     assert obj.Shape.isValid(), "Generated solid is invalid."
     
-    # 2. 验证体积为正（没有被细分导致塌陷翻转）
+    # 2. 验证体积为正（没有被切破）
     assert obj.Shape.Volume > 0, "Volume must be greater than 0."
     
-    # 3. 核心校验：验证面数极大地增加了，以证明细分算法生效了
-    # 原始 6 个点的凸包只有 8 个面，细分 3 次后会有上千个面
-    assert len(obj.Shape.Faces) > 500, "Subdivision failed to generate a dense smooth mesh."
+    # 3. 核心校验：验证 Loft 的“极简面数”特性
+    # Loft 算法切片 15 次，通常只会生成十几个侧面，加上顶底两面
+    # 面数绝对不应该超过 50，这证明了我们成功抛弃了微小的三角网格！
+    assert len(obj.Shape.Faces) >= 2, "Loft should generate at least some faces."
+    assert len(obj.Shape.Faces) < 50, "Face count is too high, Loft may have failed and fell back to mesh."
     
     # 4. 验证水密性（Watertight）：检查实体是否完全封闭
     assert obj.Shape.isClosed(), "The resulting solid is not closed (leaking)."
 
 # ==========================================
-# 测试 3：极端退化情况
+# 测试 3：验证切片数量对 Loft 的影响
 # ==========================================
-def test_smooth_body_degenerate_fallback(term):
-    """Test the fallback mechanism when points are extremely degenerate."""
+def test_smooth_body_slices_parameter(term):
+    """Test if changing the slices parameter correctly affects the topology"""
     term.write = MagicMock()
-    # Points strictly on the X-axis (cannot form a 3D volume)
-    pts = [(0,0,0), (1,0,0), (2,0,0), (3,0,0), (4,0,0)]
+    # A tall point cloud
+    pts = [(0,0,0), (10,0,5), (0,10,10), (-10,0,15), (0,-10,20), (0,0,25), (5,5,12), (-5,-5,8)]
     
-    term.execute_code(f"smooth_body({pts})")
+    # 1. 用极少的切片生成
+    term.execute_code(f"smooth_body({pts}, slices=5)")
+    obj1 = FreeCAD.ActiveDocument.getObject("model_1")
+    faces_5 = len(obj1.Shape.Faces)
     
-    # We mainly want to ensure it doesn't crash the terminal with a Segfault
-    assert term.write.call_count >= 0, "Should handle degenerate points gracefully."
+    # 清理文档重新生成
+    FreeCAD.ActiveDocument.removeObject("model_1")
+    
+    # 2. 用更多的切片生成
+    term.execute_code(f"smooth_body({pts}, slices=20)")
+    obj2 = FreeCAD.ActiveDocument.getObject("model_1")
+    faces_20 = len(obj2.Shape.Faces)
+    
+    # 验证切片数越多，生成的 B-spline 曲面段数越多（面数越多）
+    assert faces_20 > faces_5, "More slices should generate more surface patches."
 
 # ==========================================
 # 测试 4：点数不足时的异常处理
