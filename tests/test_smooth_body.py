@@ -79,10 +79,10 @@ def test_smooth_body_coplanar(term):
     assert obj.Shape.isValid(), "Generated Face is invalid."
 
 # ==========================================
-# 测试 2：非共面点集生成 3D 高阶自由曲面实体
+# 测试 2：非共面点集生成 3D 高阶自由曲面实体 (细分算法)
 # ==========================================
 def test_smooth_body_non_coplanar(term):
-    """Test non-coplanar points generating a 3D B-Spline solid"""
+    """Test non-coplanar points generating a 3D solid via Catmull-Clark subdivision"""
     term.write = MagicMock()
     # A set of 3D points with significant Z-axis variation
     pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
@@ -97,16 +97,20 @@ def test_smooth_body_non_coplanar(term):
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     
-    # With the new B-Spline + thicken algorithm, it should yield a valid solid
+    # Verify it is a solid with positive volume
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Non-coplanar points should generate a 3D solid."
     assert obj.Shape.Volume > 0, "Volume must be greater than 0."
-    assert obj.Shape.isValid(), "Generated B-Spline solid is invalid."
+    assert obj.Shape.isValid(), "Generated solid is invalid."
+    
+    # Verify that the subdivision drastically increased the face/vertex count
+    # A raw convex hull of 6 points has 8 triangles. Subdivision should create hundreds/thousands.
+    assert len(obj.Shape.Faces) > 50, "Subdivision failed to generate a dense smooth mesh."
 
 # ==========================================
-# 测试 3：极端退化情况 (Fallback 测试)
+# 测试 3：极端退化情况 (Fallback 降级测试)
 # ==========================================
 def test_smooth_body_degenerate_fallback(term):
-    """Test the fallback mechanism when points are extremely degenerate (e.g., all on a line)."""
+    """Test the fallback mechanism when points are extremely degenerate."""
     term.write = MagicMock()
     # Points strictly on the X-axis (cannot form a 3D volume)
     pts = [(0,0,0), (1,0,0), (2,0,0), (3,0,0), (4,0,0)]
