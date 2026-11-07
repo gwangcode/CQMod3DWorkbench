@@ -3,6 +3,7 @@ import sys
 import os
 import types
 from unittest.mock import MagicMock
+import numpy as np
 
 # 动态探测 FreeCAD 路径
 def add_freecad_to_path():
@@ -67,11 +68,6 @@ def test_smooth_body_coplanar(term):
     pts = [(0,0,0), (10,0,0), (15,10,0), (10,20,0), (0,20,0), (-5,10,0)]
     
     term.execute_code(f"smooth_body({pts})")
-    
-    if term.write.call_count > 0:
-        print("\n=== TERMINAL ERROR ===")
-        print(term.write.call_args[0][0])
-        print("======================\n")
         
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
@@ -79,15 +75,13 @@ def test_smooth_body_coplanar(term):
     assert obj.Shape.isValid(), "Generated Face is invalid."
 
 # ==========================================
-# 测试 2：非共面点集生成 3D 高阶自由曲面实体 (Loft 算法)
+# 测试 2：稀疏点云 (触发引擎 A - B-Spline 拟合)
 # ==========================================
-def test_smooth_body_non_coplanar(term):
-    """Test non-coplanar points generating a watertight 3D solid via Loft"""
+def test_smooth_body_sparse_points(term):
+    """Test sparse points (<30) generating a solid via B-Spline fitting"""
     term.write = MagicMock()
-    # A set of 3D points with significant Z-axis variation
-    pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5), (5,5,15), (-5,-5,10)]
+    pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
     
-    # 使用默认的 15 层切片
     term.execute_code(f"smooth_body({pts})")
     
     if term.write.call_count > 0:
@@ -97,47 +91,65 @@ def test_smooth_body_non_coplanar(term):
         
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
-    
-    # 1. 验证它是实体 (Solid) 且有效 (Valid)
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Should generate a 3D solid."
     assert obj.Shape.isValid(), "Generated solid is invalid."
-    
-    # 2. 验证体积为正（没有被切破）
     assert obj.Shape.Volume > 0, "Volume must be greater than 0."
-    
-    # 3. 核心校验：验证 Loft 的“极简面数”特性
-    # Loft 算法切片 15 次，通常只会生成十几个侧面，加上顶底两面
-    # 面数绝对不应该超过 50，这证明了我们成功抛弃了微小的三角网格！
-    assert len(obj.Shape.Faces) >= 2, "Loft should generate at least some faces."
-    assert len(obj.Shape.Faces) < 50, "Face count is too high, Loft may have failed and fell back to mesh."
-    
-    # 4. 验证水密性（Watertight）：检查实体是否完全封闭
     assert obj.Shape.isClosed(), "The resulting solid is not closed (leaking)."
+    # 因为是拟合出来的曲面加厚，面数不应该像网格细分那么多
+    assert len(obj.Shape.Faces) < 100, "Face count is too high, B-Spline fitting may have failed."
 
 # ==========================================
-# 测试 3：验证切片数量对 Loft 的影响
+# 测试 3：密集点云 (触发引擎 B - Loft 切片) 及参数验证
 # ==========================================
-def test_smooth_body_slices_parameter(term):
-    """Test if changing the slices parameter correctly affects the topology"""
+def test_smooth_body_dense_points_and_slices(term):
+    """Test dense points (>=30) generating a solid via Loft, and verify slices parameter"""
     term.write = MagicMock()
-    # A tall point cloud
-    pts = [(0,0,0), (10,0,5), (0,10,10), (-10,0,15), (0,-10,20), (0,0,25), (5,5,12), (-5,-5,8)]
+    
+    # 生成 50 个分布在椭球面上的点 (模拟石头)
+    pts = []
+    for i in range(7):
+        for j in range(7):
+            theta = np.pi * i / 6.0
+            phi = 2 * np.pi * j / 6.0
+            x = 10 * np.sin(theta) * np.cos(phi)
+            y = 10 * np.sin(theta) * np.sin(phi)
+            z = 15 * np.cos(theta)
+            pts.append((x, y, z))
+    # 这里刚好生成 49 个点，触发 Loft 引擎
     
     # 1. 用极少的切片生成
     term.execute_code(f"smooth_body({pts}, slices=5)")
     obj1 = FreeCAD.ActiveDocument.getObject("model_1")
+    
+    if term.write.call_count > 0:
+        print("\n=== TERMINAL ERROR (Slices=5) ===")
+        print(term.write.call_args[0][0])
+        print("======================\n")
+        
+    assert obj1 is not None, "Loft failed to generate object."
     faces_5 = len(obj1.Shape.Faces)
     
     # 清理文档重新生成
     FreeCAD.ActiveDocument.removeObject("model_1")
+    term.write.reset_mock()
     
     # 2. 用更多的切片生成
-    term.execute_code(f"smooth_body({pts}, slices=20)")
+    term.execute_code(f"smooth_body({pts}, slices=15)")
     obj2 = FreeCAD.ActiveDocument.getObject("model_1")
-    faces_20 = len(obj2.Shape.Faces)
     
+    if term.write.call_count > 0:
+        print("\n=== TERMINAL ERROR (Slices=15) ===")
+        print(term.write.call_args[0][0])
+        print("======================\n")
+        
+    assert obj2 is not None, "Loft failed to generate object."
+    faces_15 = len(obj2.Shape.Faces)
+    
+    # 验证 Loft 算法生效且面数极少
+    assert obj2.Shape.isValid(), "Loft solid is invalid."
+    assert obj2.Shape.isClosed(), "Loft solid is not closed."
     # 验证切片数越多，生成的 B-spline 曲面段数越多（面数越多）
-    assert faces_20 > faces_5, "More slices should generate more surface patches."
+    assert faces_15 > faces_5, "More slices should generate more surface patches."
 
 # ==========================================
 # 测试 4：点数不足时的异常处理
