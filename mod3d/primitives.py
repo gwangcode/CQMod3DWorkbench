@@ -122,7 +122,7 @@ def smooth_body(points, slices=15):
     - For sparse points (< 30): Uses B-Spline surface fitting.
     - For dense points (>= 30): Uses Loft (ThruSections) algorithm.
     """
-    # 【核心修复】在函数内部强制导入 numpy，确保不会因为外部遗漏而报错
+    
     import numpy as np
     
     if not points or len(points) < 4:
@@ -146,14 +146,11 @@ def smooth_body(points, slices=15):
         except Exception:
             return Shape(Part.makePolygon([FreeCAD.Vector(*p) for p in points]))
 
-    # 获取点云的凸包，作为包络骨架
+    
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
     hull_pts = np.array(hull.vertices)
 
-    # ==========================================
-    # 引擎 A：稀疏点云 -> B-Spline 曲面拟合
-    # ==========================================
     if len(points) < 30:
         center = hull_pts.mean(axis=0)
         centered_hull = hull_pts - center
@@ -191,9 +188,6 @@ def smooth_body(points, slices=15):
         except Exception:
             pass
 
-    # ==========================================
-    # 引擎 B：密集点云 -> Loft 切片放样
-    # ==========================================
     max_slices = max(2, len(points) // 4)
     slices = min(slices, max_slices)
 
@@ -236,9 +230,6 @@ def smooth_body(points, slices=15):
         except Exception:
             pass
 
-    # ==========================================
-    # 引擎 C：最后的兜底 -> 细分网格
-    # ==========================================
     smooth_mesh = hull.copy()
     for _ in range(3):
         smooth_mesh = smooth_mesh.subdivide()
