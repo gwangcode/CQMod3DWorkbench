@@ -15,10 +15,9 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 - **⚡ Operator Overloading Magic**: Directly use Python's math operators on FreeCAD shapes for rapid boolean operations, transformations, and deformations.
 - **🔄 Non-Destructive Parametric Modeling**: All boolean operations and deformations preserve your original models. It automatically generates native FreeCAD nodes (e.g., `Fusion`, `Cut`, `Noise`, `Twist`) and hides the source objects. You can delete the new node at any time to recover the originals!
 - **🧠 Real-Time Updates**: Because we generate native parametric nodes, modifying a base object (like changing a sphere's radius) will automatically cascade and update all downstream boolean or noise operations.
-- **🪨 Procedural Noise**: Apply natural, rocky, or organic textures to regular geometries with a simple function call.
-- **🖱️ Smart Object Picking**: Select any object in the FreeCAD tree and press `Ctrl + Shift + C` to instantly drop `part("object_name")` into the terminal.
+- **🪨 Procedural Noise & Smoothing**: Apply natural, rocky textures to regular geometries, or generate globally smooth continuous B-Spline bodies from chaotic point clouds.
+- **🖱️ Smart Object Picking**: Select any object in the FreeCAD tree and press `Ctrl + Shift + C` to instantly copy `part("object_name")` to your clipboard and terminal.
 - **📜 Script Execution**: Run external Python files directly in the terminal context using `runf("path/to/script.py")`.
-- **🌐 Advanced Surface Generation**: Generate smooth B-Spline surfaces and 3D bodies directly from lists of 2D or 3D points.
 
 ## 📦 Installation
 
@@ -38,7 +37,7 @@ Write Python code directly inside FreeCAD to generate geometry, apply noise defo
 3. Restart FreeCAD.
 
 ### 📢 Dependencies
-This workbench runs entirely on FreeCAD's native `Part` module, so no heavy CAD kernels are required. However, `apply_noise`, `apply_noise_wire`, and 2D boolean operations rely on the following Python libraries:
+This workbench runs entirely on FreeCAD's native `Part` module, so no heavy CAD kernels are required. However, `apply_noise`, `smooth_body`, and 2D boolean operations rely on the following Python libraries:
 - `numpy`
 - `scipy`
 - `trimesh`
@@ -60,21 +59,19 @@ pip install numpy scipy trimesh shapely
 
 **1. Create basic shapes (Auto-named as `model_1`, `model_2`, etc.):**
 ```python
-# Generate a cube and a sphere
 cube(10)
 sphere(6)
 ```
 
-**2. Non-Destructive Boolean Operations (creates native `Cut`, `Fusion` nodes):**
+**2. Non-Destructive Boolean Operations:**
 ```python
-# Cut a sphere out of the cube.
-# model_1 and model_2 will be hidden, a 'Cut' node is created.
+# Cut a sphere out of the cube (creates a native 'Cut' node, hides originals)
 part("model_1") - part("model_2")
 ```
 
 **3. Destructive In-place Transformations:**
 ```python
-# Move model_1 by 15mm in X. It updates in-place without creating new nodes.
+# Move model_1 by 15mm in X. Updates in-place without creating new nodes.
 part("model_1") + [15, 0, 0]
 ```
 
@@ -85,9 +82,16 @@ part("model_1") + [15, 0, 0]
 apply_noise(part("model_1"), density=0.6, smoothness=1.5, amplitude=0.4)
 ```
 
-**5. Execute an external script:**
+**5. Generate Smooth B-Spline Bodies from Point Clouds:**
 ```python
-# Load and run a local .py file directly in the terminal
+# Define some unordered 3D points
+pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
+# Generates a globally smooth, volume-preserving solid
+smooth_body(pts)
+```
+
+**6. Execute an external script:**
+```python
 runf("D:/projects/my_complex_model.py")
 ```
 
@@ -116,7 +120,7 @@ Our terminal is designed to feel just like a native code REPL:
 
 The Code3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D primitives return a native `Part.Shape` wrapped in our magic operator proxy. 2D primitives return a `Shape2d` object which is automatically converted to a `Part.Face` for display.
 
-### 3D Primitives & Point-Cloud Generators
+### 3D Primitives & Surface/Point-Cloud Generators
 
 | Function Signature | Description |
 | :--- | :--- |
@@ -134,20 +138,18 @@ The Code3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D
 | `dodecahedron(a=1)` | Creates a dodecahedron (12 faces). |
 | `icosahedron(a=1)` | Creates an icosahedron (20 faces). |
 | `convex_hull(vertices)` | Creates a convex hull from a list of 3D points. |
-| `bspline_surface(points)` | Creates a closed B-spline surface from a 1D point list or a 2D grid of points. |
-| `smooth_body(points)` | Generates a smooth 3D solid (or 2D face if coplanar) that completely encloses a set of unordered 3D points. |
+| `bspline_surface(points, thickness=0.0)` | Creates a closed B-spline surface from a 1D point list or a 2D grid of points. |
+| `smooth_body(points)` | Generates a globally smooth 3D solid (via Catmull-Clark subdivision) from unordered points. |
 
 **Example: Create a smooth body from scattered points**
 ```python
-# Define some non-coplanar points
 pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
-# Generate a smooth solid passing through these points
 smooth_body(pts)
 ```
 
 ---
 
-### 2D Primitives
+### 2D Primitives & Mathematical Curves
 
 2D primitives return a `Shape2d` object. They are automatically displayed as flat faces. To turn a 2D shape into a 3D solid, you can use the `.extrude()` method.
 
@@ -185,7 +187,6 @@ smooth_body(pts)
 
 **Example: Creating a 3D shape from a 2D curve**
 ```python
-# Create a 2D heart curve, convert it to a face, and extrude it into a 3D solid
 heart_2d = cardioid(10)
 heart_3d = heart_2d.to_face().extrude(V(0, 0, 5))
 show(heart_3d, "Heart_Solid")
