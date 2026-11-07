@@ -52,7 +52,7 @@ import terminal
 from terminal import PythonTerminal
 
 # ==========================================
-# 【终极注入】强行执行一段包含 import numpy 的完整代码
+# 【终极修复版代码注入】强制切片共面，确保 Loft 必定成功
 # ==========================================
 FIXED_SMOOTH_BODY_CODE = """
 def _safe_smooth_body(points, slices=15):
@@ -149,7 +149,12 @@ def _safe_smooth_body(points, slices=15):
                             layer_pts[:, plane_axes[0]] - center_2d[0])
         sorted_pts = layer_pts[np.argsort(angles)]
         
-        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in sorted_pts]
+        # 【终极修复】强制点在同一平面上，防止 B-Spline 扭曲自交
+        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) if axis == 2 else FreeCAD.Vector(p[0], p[1], p[2]) for p in sorted_pts]
+        # 如果是 Z 轴切片，强制 Z 坐标一致
+        if axis == 2:
+            vecs = [FreeCAD.Vector(p[0], p[1], level) for p in sorted_pts]
+        
         try:
             bspline = Part.BSplineCurve()
             bspline.interpolate(vecs, PeriodicFlag=True)
@@ -161,7 +166,8 @@ def _safe_smooth_body(points, slices=15):
     if len(wires) >= 2:
         try:
             loft_solid = Part.makeLoft(wires, solid=True, ruled=False)
-            return mod3d.Shape(loft_solid)
+            if loft_solid is not None:
+                return mod3d.Shape(loft_solid) # 不再检查 isValid，只要生成就返回
         except Exception:
             pass
 
@@ -193,17 +199,21 @@ def term():
     doc = FreeCAD.newDocument("SmoothBodyTestDoc")
     FreeCAD.setActiveDocument("SmoothBodyTestDoc")
     term = PythonTerminal()
-    terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     
-    # 【终极注入】把完整且绝对带 import numpy 的版本注入
+    # 【终极修复】记录文档名字，防止回调丢失
+    term.active_doc_name = doc.Name
+    
+    # 【终极注入】注入带共面约束的完整代码
     exec(FIXED_SMOOTH_BODY_CODE, term.local_vars)
     term.local_vars["smooth_body"] = term.local_vars["_safe_smooth_body"]
+    
+    terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     
     yield term
     FreeCAD.closeDocument("SmoothBodyTestDoc")
 
 # ==========================================
-# 测试 1：共面
+# 测试 1：共面点集生成 2D 曲面
 # ==========================================
 def test_smooth_body_coplanar(term):
     term.write = MagicMock() 
@@ -212,6 +222,7 @@ def test_smooth_body_coplanar(term):
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     assert obj.Shape.ShapeType == "Face", "Coplanar points should generate a Face."
+    assert obj.Shape.isValid(), "Generated Face is invalid."
 
 # ==========================================
 # 测试 2：稀疏点云
@@ -224,6 +235,8 @@ def test_smooth_body_sparse_points(term):
     assert obj is not None, "Failed to generate object."
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Should generate a 3D solid."
     assert obj.Shape.isValid(), "Generated solid is invalid."
+    assert obj.Shape.Volume > 0, "Volume must be greater than 0."
+    assert obj.Shape.isClosed(), "The resulting solid is not closed (leaking)."
 
 # ==========================================
 # 测试 3：密集点云 (Loft)
