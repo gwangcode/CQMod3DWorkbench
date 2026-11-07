@@ -2,6 +2,7 @@ import pytest
 import sys
 import os
 import types
+import importlib
 from unittest.mock import MagicMock
 import numpy as np
 
@@ -41,11 +42,21 @@ fake_qtgui.QTextCursor = MagicMock()
 
 sys.modules.update({'PySide6': fake_pyside, 'PySide6.QtCore': fake_qtcore, 'PySide6.QtGui': fake_qtgui, 'PySide6.QtWidgets': fake_qtwidgets})
 
-if 'terminal' in sys.modules: del sys.modules['terminal']
+# ==========================================
+# 【核心修复】强制刷新模块缓存，确保加载最新的 primitives.py
+# ==========================================
+if 'terminal' in sys.modules:
+    del sys.modules['terminal']
+if 'mod3d' in sys.modules:
+    del sys.modules['mod3d']
+for key in list(sys.modules.keys()):
+    if key.startswith('mod3d.'):
+        del sys.modules[key]
 
 import FreeCAD
 import Part
 import mod3d
+import mod3d.primitives
 import terminal
 from terminal import PythonTerminal
 
@@ -54,7 +65,7 @@ def term():
     doc = FreeCAD.newDocument("SmoothBodyTestDoc")
     FreeCAD.setActiveDocument("SmoothBodyTestDoc")
     term = PythonTerminal()
-    # 仅让 QTimer 同步执行，绝不篡改 smooth_body
+    # 仅同步 QTimer，绝不篡改 smooth_body
     terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
     yield term
     FreeCAD.closeDocument("SmoothBodyTestDoc")
@@ -64,12 +75,9 @@ def term():
 # 测试 1：共面点集生成 2D 曲面
 # ==========================================
 def test_smooth_body_coplanar(term):
-    """Test coplanar points generating a 2D face"""
     term.write = MagicMock() 
     pts = [(0,0,0), (10,0,0), (15,10,0), (10,20,0), (0,20,0), (-5,10,0)]
-    
     term.execute_code(f"smooth_body({pts})")
-        
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     assert obj.Shape.ShapeType == "Face", "Coplanar points should generate a Face."
@@ -79,12 +87,9 @@ def test_smooth_body_coplanar(term):
 # 测试 2：稀疏点云 (触发引擎 A)
 # ==========================================
 def test_smooth_body_sparse_points(term):
-    """Test sparse points (<30) generating a solid via B-Spline fitting"""
     term.write = MagicMock()
     pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
-    
     term.execute_code(f"smooth_body({pts})")
-        
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Should generate a 3D solid."
@@ -96,10 +101,9 @@ def test_smooth_body_sparse_points(term):
 # 测试 3：密集点云 (触发引擎 B - Loft) 及参数验证
 # ==========================================
 def test_smooth_body_dense_points_and_slices(term):
-    """Test dense points (>=30) generating a solid via Loft"""
     term.write = MagicMock()
-    
     pts = []
+    
     # 避开极点生成椭球点阵
     for i in range(1, 6):
         for j in range(7):
@@ -112,12 +116,6 @@ def test_smooth_body_dense_points_and_slices(term):
             
     term.execute_code(f"smooth_body({pts}, slices=5)")
     obj1 = FreeCAD.ActiveDocument.getObject("model_1")
-    
-    if term.write.call_count > 0:
-        print("\n=== TERMINAL ERROR (Slices=5) ===")
-        print(term.write.call_args[0][0])
-        print("======================\n")
-        
     assert obj1 is not None, "Loft failed to generate object."
     faces_5 = len(obj1.Shape.Faces)
     
@@ -130,15 +128,12 @@ def test_smooth_body_dense_points_and_slices(term):
     
     assert obj2.Shape.isValid(), "Loft solid is invalid."
     assert obj2.Shape.isClosed(), "Loft solid is not closed."
-    
-    # 验证切片数越多面数越多
     assert faces_15 > faces_5, "More slices should generate more surface patches."
 
 # ==========================================
 # 测试 4：点数不足时的异常处理
 # ==========================================
 def test_smooth_body_insufficient_points(term):
-    """Test exception handling when there are fewer than 4 points"""
     term.write = MagicMock()
     term.execute_code("smooth_body([(0,0,0), (10,0,0), (0,10,0)])")
     term.write.assert_called_once()
