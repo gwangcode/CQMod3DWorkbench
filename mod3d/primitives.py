@@ -115,12 +115,13 @@ def bspline_surface(points, thickness=0.0):
     return Shape(face)
 
 
-def smooth_body(points, slices=15):
+def smooth_body(points, slices=6):
     """
-    Generate a smooth 3D solid body from unordered points.
-    Adaptive algorithm:
-    - For sparse points (< 30): Uses B-Spline surface fitting.
-    - For dense points (>= 30): Uses Loft (ThruSections) algorithm.
+    Generate a minimal-face, mathematically smooth B-Spline body from unordered points.
+    Algorithm: 
+    1. Compute Convex Hull.
+    2. Slice the hull into a few horizontal layers.
+    3. Loft the sections into a solid.
     """
     import numpy as np
     
@@ -145,101 +146,61 @@ def smooth_body(points, slices=15):
         except Exception:
             return Shape(Part.makePolygon([FreeCAD.Vector(*p) for p in points]))
 
-    cloud = trimesh.points.PointCloud(np_pts)
-    hull = cloud.convex_hull
-    hull_pts = np.array(hull.vertices)
+    hull = trimesh.convex.convex_hull(np_pts)
+    mesh_obj = Mesh.Mesh()
+    for f in hull.faces:
+        v0, v1, v2 = hull.vertices[f[0]], hull.vertices[f[1]], hull.vertices[f[2]]
+        mesh_obj.addFacet(float(v0[0]), float(v0[1]), float(v0[2]),
+                          float(v1[0]), float(v1[1]), float(v1[2]),
+                          float(v2[0]), float(v2[1]), float(v2[2]))
+    shape = Part.Shape()
+    shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
+    solid = Part.makeSolid(shape)
 
-    if len(points) < 30:
-        center = hull_pts.mean(axis=0)
-        centered_hull = hull_pts - center
-        
-        r = np.linalg.norm(centered_hull, axis=1)
-        theta = np.arccos(np.clip(centered_hull[:, 2] / (r + 1e-9), -1.0, 1.0))
-        phi = np.arctan2(centered_hull[:, 1], centered_hull[:, 0])
-
-        u_vals = np.linspace(0.05, np.pi - 0.05, 4)
-        v_vals = np.linspace(-np.pi, np.pi, 8)
-        
-        grid_pts = []
-        for u_ang in u_vals:
-            row = []
-            for v_ang in v_vals:
-                dir_vec = np.array([
-                    np.sin(u_ang) * np.cos(v_ang),
-                    np.sin(u_ang) * np.sin(v_ang),
-                    np.cos(u_ang)
-                ])
-                projections = np.dot(centered_hull, dir_vec)
-                max_r = np.max(projections)
-                pt = center + dir_vec * max_r
-                row.append(FreeCAD.Vector(float(pt[0]), float(pt[1]), float(pt[2])))
-            grid_pts.append(row)
-
-        try:
-            surf = Part.BSplineSurface()
-            surf.interpolate(grid_pts, 3, 3) 
-            face = surf.toShape()
-            solid = face.thicken(0.5, 1e-5)
-            if solid.ShapeType == 'CompSolid':
-                solid = solid.Solids[0]
-            return Shape(solid)
-        except Exception:
-            pass
-
-    max_slices = max(2, len(points) // 4)
-    slices = min(slices, max_slices)
-
-    bounds = np.max(np_pts, axis=0) - np.min(np_pts, axis=0)
-    axis = np.argmax(bounds)
+    bbox = solid.BoundBox
+    lengths = [bbox.XLength, bbox.YLength, bbox.ZLength]
+    axis = int(np.argmax(lengths))
     
-    min_val = np.min(np_pts[:, axis])
-    max_val = np.max(np_pts[:, axis])
-    levels = np.linspace(min_val, max_val, slices)
-    
-    plane_axes = (0, 1) if axis == 2 else ((0, 2) if axis == 1 else (1, 2))
-    center_2d = np.mean(np_pts[:, plane_axes], axis=0)
-    tol = (max_val - min_val) / (slices * 1.5)
+    if axis == 0:
+        normal_vec = FreeCAD.Vector(1, 0, 0)
+        min_val, max_val = bbox.XMin, bbox.XMax
+    elif axis == 1:
+        normal_vec = FreeCAD.Vector(0, 1, 0)
+        min_val, max_val = bbox.YMin, bbox.YMax
+    else:
+        normal_vec = FreeCAD.Vector(0, 0, 1)
+        min_val, max_val = bbox.ZMin, bbox.ZMax
 
+    margin = (max_val - min_val) * 0.01
+    levels = np.linspace(min_val + margin, max_val - margin, slices)
+    
     wires = []
     for level in levels:
-        mask = np.abs(np_pts[:, axis] - level) <= tol
-        layer_pts = np_pts[mask]
-        
-        if len(layer_pts) < 3:
-            continue
+        if axis == 0:
+            plane = FreeCAD.Plane(origin=FreeCAD.Vector(level, 0, 0), xDir=(0, 1, 0), normal=(1, 0, 0))
+        elif axis == 1:
+            plane = FreeCAD.Plane(origin=FreeCAD.Vector(0, level, 0), xDir=(1, 0, 0), normal=(0, 1, 0))
+        else:
+            plane = FreeCAD.Plane(origin=FreeCAD.Vector(0, 0, level), xDir=(1, 0, 0), normal=(0, 0, 1))
             
-        angles = np.arctan2(layer_pts[:, plane_axes[1]] - center_2d[1], 
-                            layer_pts[:, plane_axes[0]] - center_2d[0])
-        sorted_pts = layer_pts[np.argsort(angles)]
-        
-        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in sorted_pts]
-        try:
-            bspline = Part.BSplineCurve()
-            bspline.interpolate(vecs, PeriodicFlag=True)
-            wire = Part.Wire([bspline.toShape()])
-            wires.append(wire)
-        except Exception:
-            continue
+        sec = solid.section(plane)
+        if sec and sec.Faces:
+            main_face = max(sec.Faces, key=lambda f: f.Area)
+            wires.append(main_face.outerWire())
 
     if len(wires) >= 2:
         try:
             loft_solid = Part.makeLoft(wires, solid=True, ruled=False)
-            if loft_solid is not None and loft_solid.isValid():
+            if loft_solid and loft_solid.isValid():
                 return Shape(loft_solid)
         except Exception:
             pass
-
+            
     smooth_mesh = hull.copy()
-    for _ in range(3):
+    for _ in range(2):
         smooth_mesh = smooth_mesh.subdivide()
-        
-    try:
-        smoothed_mesh = trimesh.smoothing.filter_taubin(smooth_mesh, lamb=0.5, nu=-0.53, iterations=10)
-        vertices = smoothed_mesh.vertices
-        faces = smoothed_mesh.faces
-    except Exception:
-        vertices = hull.vertices
-        faces = hull.faces
+    vertices = smooth_mesh.vertices
+    faces = smooth_mesh.faces
 
     mesh_obj = Mesh.Mesh()
     for f in faces:
