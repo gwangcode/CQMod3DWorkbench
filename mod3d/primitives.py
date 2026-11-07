@@ -1,36 +1,28 @@
 import numpy as np
 import FreeCAD
 import Part
+import Mesh
 import MeshPart
+import trimesh
 from .shapes import Shape2d
-from .patch import Shape  # 引入代理类
+from .patch import Shape
 
 # ==========================================
 # ---- 3D primitives ----
 # ==========================================
-def cuboid(a=1, b=1, c=1): 
-    return Shape(Part.makeBox(a, b, c), primitive_data={"type": "box", "params": {"Length": a, "Width": b, "Height": c}})
-
-def cube(a=1):              
-    return cuboid(a, a, a)
-
-def cylinder(radius=1, height=1): 
-    return Shape(Part.makeCylinder(radius, height), primitive_data={"type": "cylinder", "params": {"Radius": radius, "Height": height}})
-
-def cone(radius=1, height=1):     
-    return Shape(Part.makeCone(radius, 0, height), primitive_data={"type": "cone", "params": {"Radius1": radius, "Radius2": 0, "Height": height}})
-
-def sphere(radius=1, face_index=3): 
-    return Shape(Part.makeSphere(radius), primitive_data={"type": "sphere", "params": {"Radius": radius}})
-
+def cuboid(a=1, b=1, c=1): return Shape(Part.makeBox(a, b, c))
+def cube(a=1):              return cuboid(a, a, a)
+def cylinder(radius=1, height=1): return Shape(Part.makeCylinder(radius, height))
+def cone(radius=1, height=1):     return Shape(Part.makeCone(radius, 0, height))
+def sphere(radius=1, face_index=3): return Shape(Part.makeSphere(radius))
 def torus(major_radius=2, minor_radius=1, division=0.1):
-    return Shape(Part.makeTorus(major_radius, minor_radius), primitive_data={"type": "torus", "params": {"Radius1": major_radius, "Radius2": minor_radius}})
+    return Shape(Part.makeTorus(major_radius, minor_radius))
 
 def ellipsoid(a=1, b=1, c=1, division=0.1):
-    sphere = Part.makeSphere(1.0)
+    sphere_shape = Part.makeSphere(1.0)
     mat = FreeCAD.Matrix()
     mat.scale(a, b, c)
-    return Shape(sphere.transformGeometry(mat))
+    return Shape(sphere_shape.transformGeometry(mat))
 
 def prism(radius=1, n=3, height=1):
     pts = [FreeCAD.Vector(radius*np.cos(2*np.pi*i/n), radius*np.sin(2*np.pi*i/n), 0) for i in range(n)]
@@ -47,10 +39,16 @@ def pyramid(radius=1, n=3, height=1, division=0.1):
     return Shape(Part.makeLoft([face, Part.Vertex(FreeCAD.Vector(0, 0, height))], True))
 
 def convex_hull(vertices):
-    import trimesh
-    from .utils import _tri_mesh_to_shape
     mesh = trimesh.convex.convex_hull(np.asarray(vertices, dtype=float))
-    return Shape(_tri_mesh_to_shape(mesh.vertices, mesh.faces))
+    mesh_obj = Mesh.Mesh()
+    for f in mesh.faces:
+        v0, v1, v2 = mesh.vertices[f[0]], mesh.vertices[f[1]], mesh.vertices[f[2]]
+        mesh_obj.addFacet(float(v0[0]), float(v0[1]), float(v0[2]),
+                          float(v1[0]), float(v1[1]), float(v1[2]),
+                          float(v2[0]), float(v2[1]), float(v2[2]))
+    shape = Part.Shape()
+    shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
+    return Shape(Part.makeSolid(shape))
 
 def tetrahedron(a=1):
     return convex_hull([[0,0,0],[a,0,0], [0.5*a, 0.5*3**0.5*a, 0], [0.5*a, 0.5*a/3**0.5, 2**0.5/3**0.5*a]])
@@ -76,6 +74,47 @@ def icosahedron(a=1):
         [x2,0,x1],[-x2,0,x1],[x2,0,-x1],[-x2,0,-x1],
         [0,x1,x2],[0,-x1,x2],[0,x1,-x2],[0,-x1,-x2]])
 
+# ==========================================
+# ---- Advanced Surface & Point-Cloud Generators ----
+# ==========================================
+def bspline_surface(points, thickness=0.0):
+    """
+    Creates a closed B-spline surface from a 1D point list or a 2D grid of points.
+    """
+    if not points or len(points) == 0:
+        raise ValueError("Point list cannot be empty.")
+
+    is_1d = len(points[0]) == 3 and isinstance(points[0][0], (int, float))
+    face = None
+    
+    if is_1d:
+        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in points]
+        curve = Part.BSplineCurve()
+        curve.interpolate(vecs, PeriodicFlag=True)
+        wire = Part.Wire([curve.toShape()])
+        try:
+            face = Part.Face(wire)
+        except Exception:
+            return Shape(wire, primitive_data={"type": "bspline_surface_1d", "params": {"points": points}})
+    else:
+        vecs_2d = [[FreeCAD.Vector(p[0], p[1], p[2]) for p in row] for row in points]
+        surface = Part.BSplineSurface()
+        surface.interpolate(vecs_2d)
+        face = Part.Face(surface.toShape())
+
+    if thickness > 0.0 and face is not None:
+        try:
+            solid = face.thicken(thickness, 1e-5)
+            if solid.ShapeType == 'CompSolid':
+                solid = solid.Solids[0]
+            return Shape(solid)
+        except Exception as e:
+            FreeCAD.Console.PrintError(f"Failed to thicken surface: {e}\n")
+            return Shape(face)
+    
+    return Shape(face)
+
+
 def smooth_body(points, slices=15):
     """
     Generate a smooth 3D solid body from unordered points.
@@ -83,12 +122,6 @@ def smooth_body(points, slices=15):
     - For sparse points (< 30): Uses B-Spline surface fitting.
     - For dense points (>= 30): Uses Loft (ThruSections) algorithm.
     """
-    import FreeCAD
-    import Part
-    import numpy as np
-    import trimesh
-    from .patch import Shape
-
     if not points or len(points) < 4:
         raise ValueError("At least 4 points are required to form a 3D solid.")
 
@@ -110,6 +143,7 @@ def smooth_body(points, slices=15):
         except Exception:
             return Shape(Part.makePolygon([FreeCAD.Vector(*p) for p in points]))
 
+
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
     hull_pts = np.array(hull.vertices)
@@ -122,8 +156,8 @@ def smooth_body(points, slices=15):
         theta = np.arccos(np.clip(centered_hull[:, 2] / (r + 1e-9), -1.0, 1.0))
         phi = np.arctan2(centered_hull[:, 1], centered_hull[:, 0])
 
-        u_vals = np.linspace(0.05, np.pi - 0.05, 8)
-        v_vals = np.linspace(-np.pi, np.pi, 16)
+        u_vals = np.linspace(0.05, np.pi - 0.05, 4)
+        v_vals = np.linspace(-np.pi, np.pi, 8)
         
         grid_pts = []
         for u_ang in u_vals:
@@ -149,7 +183,7 @@ def smooth_body(points, slices=15):
                 solid = solid.Solids[0]
             return Shape(solid)
         except Exception:
-            pass # 如果拟合失败，继续走下方的 Loft 引擎
+            pass
 
     max_slices = max(2, len(points) // 4)
     slices = min(slices, max_slices)
@@ -192,7 +226,7 @@ def smooth_body(points, slices=15):
             return Shape(loft_solid)
         except Exception:
             pass
-            
+
     smooth_mesh = hull.copy()
     for _ in range(3):
         smooth_mesh = smooth_mesh.subdivide()
@@ -205,7 +239,6 @@ def smooth_body(points, slices=15):
         vertices = hull.vertices
         faces = hull.faces
 
-    import Mesh
     mesh_obj = Mesh.Mesh()
     for f in faces:
         v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
@@ -215,41 +248,6 @@ def smooth_body(points, slices=15):
     shape = Part.Shape()
     shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
     return Shape(Part.makeSolid(shape))
-
-def bspline_surface(points):
-    """
-    Here is the English translation:
-    Generate a closed B-spline closed surface from a given set of points in 3D space. Supports two input formats:
-    1. 1D point set: [(x1, y1, z1), (x2, y2, z2), ...] -> Generates a closed B-spline curve and attempts to fill it into a surface. If the points are non-coplanar, it generates a closed wireframe.
-    2. 2D point grid: [[(x1, y1, z1), (x2, y2, z2), ...], ...] -> Generates a standard B-spline free-form surface.
-    """
-    import FreeCAD
-    import Part
-    from .patch import Shape
-    
-    if not points or len(points) == 0:
-        raise ValueError("点集不能为空。")
-
-    is_1d = len(points[0]) == 3 and isinstance(points[0][0], (int, float))
-    
-    if is_1d:
-        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) for p in points]
-        curve = Part.BSplineCurve()
-        curve.interpolate(vecs, PeriodicFlag=True)
-        
-        wire = Part.Wire([curve.toShape()])
-        try:
-            #Try converting to a face (requires all points to be coplanar).
-            face = Part.Face(wire)
-            return Shape(face, primitive_data={"type": "bspline_surface_1d", "params": {"points": points}})
-        except Exception:
-            # If the points are not coplanar, return the closed wireframe directly.
-            return Shape(wire, primitive_data={"type": "bspline_surface_1d", "params": {"points": points}})
-    else:
-        vecs_2d = [[FreeCAD.Vector(p[0], p[1], p[2]) for p in row] for row in points]
-        surface = Part.BSplineSurface()
-        surface.interpolate(vecs_2d)
-        return Shape(surface.toShape(), primitive_data={"type": "bspline_surface_2d", "params": {"points": points}})
 
 # ==========================================
 # ---- 2D primitives ----
@@ -320,15 +318,22 @@ def catenary(a=1, step=0.1):
 
 def epicycloid(R=10, r=1, step=0.1):
     t = np.linspace(0, 2*np.pi, max(int(4*(R+r)/step), 20))
-    return Shape2d(np.column_stack([(R+r)*np.cos(t) - r*np.cos((R+r)/r*t), (R+r)*np.sin(t) - r*np.sin((R+r)/r*t)]))
+    return Shape2d(np.column_stack([
+        (R+r)*np.cos(t) - r*np.cos((R+r)/r*t),
+        (R+r)*np.sin(t) - r*np.sin((R+r)/r*t)]))
 
 def hypocycloid(R=6, r=1, step=0.1):
     t = np.linspace(0, 2*np.pi, max(int(4*(R-r)/step), 20))
-    return Shape2d(np.column_stack([(R-r)*np.cos(t) + r*np.cos((R-r)/r*t), (R-r)*np.sin(t) - r*np.sin((R-r)/r*t)]))
+    return Shape2d(np.column_stack([
+        (R-r)*np.cos(t) + r*np.cos((R-r)/r*t),
+        (R-r)*np.sin(t) - r*np.sin((R-r)/r*t)]))
 
 def lemniscate(a=1, step=0.1):
     t = np.linspace(0, 2*np.pi, max(int(8*a/step), 20))
-    return Shape2d(np.column_stack([a*np.cos(t)/ (1 + np.sin(t)**2), a*np.cos(t)*np.sin(t)/ (1 + np.sin(t)**2)]))
+    return Shape2d(np.column_stack([
+        a*np.cos(t)/ (1 + np.sin(t)**2),
+        a*np.cos(t)*np.sin(t)/ (1 + np.sin(t)**2)
+    ]))
 
 def semicircle(radius=1, step=0.1):
     t = np.linspace(0, np.pi, max(int(np.pi*radius/step), 20))
@@ -340,5 +345,6 @@ def sine(amplitude=1, frequency=1, x_start=0, x_end=2*np.pi, step=0.1):
 
 def tangent(x_start=-0.5*np.pi, x_end=0.5*np.pi, step=0.1, height=100):
     x = np.linspace(x_start + 0.01, x_end - 0.01, max(int((x_end-x_start)/step), 20))
-    y = np.tan(x); m = np.abs(y) < height
-    return Shape2d(np.column_stack([x[m], y[m]]))
+    y = np.tan(x)
+    mask = np.abs(y) < height
+    return Shape2d(np.column_stack([x[mask], y[mask]]))
