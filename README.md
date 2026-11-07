@@ -141,6 +141,69 @@ The Code3D engine comes with a rich set of built-in 3D and 2D primitives. All 3D
 | `bspline_surface(points, thickness=0.0)` | Creates a closed B-spline surface from a 1D point list or a 2D grid of points. |
 | `smooth_body(points)` | Generates a globally smooth 3D solid (via Catmull-Clark subdivision) from unordered points. |
 
+---
+
+### 🌐 Advanced Surface & Point-Cloud Generation
+
+These two advanced functions are designed to handle complex point clouds and freeform surfaces. They return fully closed, valid `Part.Solid` objects.
+
+#### 1. `bspline_surface(points, thickness=0.0)`
+Creates a mathematically precise B-Spline surface from points and optionally thickens it into a solid.
+
+*   **`points`**: 
+    *   **1D Point List** `[(x1,y1,z1), (x2,y2,z2), ...]`: Generates a closed B-spline curve. If the points are coplanar (same Z), it fills into a `Face`. If not, it creates a 3D wireframe `Wire`.
+    *   **2D Point Grid** `[[(x1,y1,z1), ...], [(x2,y2,z2), ...]]`: Generates a standard smooth B-spline surface (like a wavy cloth).
+*   **`thickness`** (float): If `> 0.0`, the surface will be offset and solidified into a closed 3D body (Solid).
+
+```python
+# Example A: A 3x3 grid to create a wavy surface
+pts_grid = [
+    [(0, 0, 0), (10, 0, 5), (20, 0, 0)],
+    [(0, 10, 5), (10, 10, 10), (20, 10, 5)],
+    [(0, 20, 0), (10, 20, 5), (20, 20, 0)]
+]
+# Create a wavy surface
+bspline_surface(pts_grid)
+
+# Example B: A 1D contour thickened into a solid
+pts_outline = [(0,0,0), (15,5,0), (20,15,0), (10,25,0), (0,20,0), (-10,10,0)]
+# Creates a flat face thickened by 2mm
+bspline_surface(pts_outline, thickness=2.0)
+```
+
+#### 2. `smooth_body(points)`
+Generates a perfectly smooth, continuous 3D solid from an **unordered** list of scattered points. Ideal for procedural rocks, pebbles, or organic shapes.
+
+*   **Algorithm**: It uses a Convex Hull to wrap the points, followed by Catmull-Clark Subdivision and Taubin smoothing to guarantee globally continuous (C1/C2) surfaces without sharp edges.
+*   **`points`**: A list of 3D coordinates `[(x,y,z), (x,y,z), ...]`. Must contain at least 4 non-coplanar points.
+
+```python
+# Example: Create a naturally smooth pebble from random points
+import random, math
+
+pts = []
+for i in range(15):
+    phi = random.uniform(0, math.pi)
+    for j in range(15):
+        theta = random.uniform(0, 2*math.pi)
+        r = 10 + random.uniform(-1.5, 1.5)
+        pts.append((
+            r * math.sin(phi) * math.cos(theta),
+            r * math.sin(phi) * math.sin(theta),
+            r * math.cos(phi)
+        ))
+
+# Generates a smooth, watertight solid
+smooth_body(pts)
+```
+
+> **💡 Tip**: If you have an existing FreeCAD model and want to smooth it, you can extract its vertices and feed them into `smooth_body`:
+> ```python
+> pts = [(v.X, v.Y, v.Z) for v in part("model_1").Vertexes]
+> smooth_body(pts)
+> ```
+
+
 **Example: Create a smooth body from scattered points**
 ```python
 pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
