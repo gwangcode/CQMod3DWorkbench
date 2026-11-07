@@ -4,7 +4,7 @@ import os
 import types
 from unittest.mock import MagicMock
 
-# 动态探测 FreeCAD 路径 (兼容 Windows/Linux)
+# 动态探测 FreeCAD 路径
 def add_freecad_to_path():
     if 'CONDA_PREFIX' in os.environ:
         prefix = os.environ['CONDA_PREFIX']
@@ -79,10 +79,10 @@ def test_smooth_body_coplanar(term):
     assert obj.Shape.isValid(), "Generated Face is invalid."
 
 # ==========================================
-# 测试 2：非共面点集生成 3D 高阶自由曲面实体 (细分算法)
+# 测试 2：非共面点集生成 3D 高阶自由曲面实体
 # ==========================================
 def test_smooth_body_non_coplanar(term):
-    """Test non-coplanar points generating a 3D solid via Catmull-Clark subdivision"""
+    """Test non-coplanar points generating a watertight 3D solid via subdivision"""
     term.write = MagicMock()
     # A set of 3D points with significant Z-axis variation
     pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
@@ -97,17 +97,22 @@ def test_smooth_body_non_coplanar(term):
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     
-    # Verify it is a solid with positive volume
-    assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Non-coplanar points should generate a 3D solid."
-    assert obj.Shape.Volume > 0, "Volume must be greater than 0."
+    # 1. 验证它是实体 (Solid) 且有效 (Valid)
+    assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Should generate a 3D solid."
     assert obj.Shape.isValid(), "Generated solid is invalid."
     
-    # Verify that the subdivision drastically increased the face/vertex count
-    # A raw convex hull of 6 points has 8 triangles. Subdivision should create hundreds/thousands.
-    assert len(obj.Shape.Faces) > 50, "Subdivision failed to generate a dense smooth mesh."
+    # 2. 验证体积为正（没有被细分导致塌陷翻转）
+    assert obj.Shape.Volume > 0, "Volume must be greater than 0."
+    
+    # 3. 核心校验：验证面数极大地增加了，以证明细分算法生效了
+    # 原始 6 个点的凸包只有 8 个面，细分 3 次后会有上千个面
+    assert len(obj.Shape.Faces) > 500, "Subdivision failed to generate a dense smooth mesh."
+    
+    # 4. 验证水密性（Watertight）：检查实体是否完全封闭
+    assert obj.Shape.isClosed(), "The resulting solid is not closed (leaking)."
 
 # ==========================================
-# 测试 3：极端退化情况 (Fallback 降级测试)
+# 测试 3：极端退化情况
 # ==========================================
 def test_smooth_body_degenerate_fallback(term):
     """Test the fallback mechanism when points are extremely degenerate."""
@@ -117,9 +122,8 @@ def test_smooth_body_degenerate_fallback(term):
     
     term.execute_code(f"smooth_body({pts})")
     
-    # The code should catch the error and either fail gracefully or return a zero-volume fallback
     # We mainly want to ensure it doesn't crash the terminal with a Segfault
-    assert term.write.call_count >= 0, "Should handle degenerate points gracefully without crashing."
+    assert term.write.call_count >= 0, "Should handle degenerate points gracefully."
 
 # ==========================================
 # 测试 4：点数不足时的异常处理
