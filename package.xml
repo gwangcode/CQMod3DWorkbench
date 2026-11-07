@@ -9,10 +9,7 @@
         <name>Gang Wang</name>
     </author>
 
-    <maintainer>
-        <name>Gang Wang</name>
-        <email>gwangforward@gmail.com</email>
-    </maintainer>
+    <maintainer email="gwangforward@gmail.com">Gang Wang</maintainer>
     
     <license file="LICENSE">MIT</license>
     
