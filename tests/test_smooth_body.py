@@ -45,206 +45,66 @@ if 'terminal' in sys.modules: del sys.modules['terminal']
 
 import FreeCAD
 import Part
-import Mesh
-import trimesh
 import mod3d
 import terminal
 from terminal import PythonTerminal
-
-# ==========================================
-# 【终极修复版代码注入】强制切片共面，确保 Loft 必定成功
-# ==========================================
-FIXED_SMOOTH_BODY_CODE = """
-def _safe_smooth_body(points, slices=15):
-    import numpy as np
-    import FreeCAD
-    import Part
-    import Mesh
-    import trimesh
-    
-    if not points or len(points) < 4:
-        raise ValueError("At least 4 points are required to form a 3D solid.")
-
-    np_pts = np.array(points)
-
-    centroid = np_pts.mean(axis=0)
-    centered_pts = np_pts - centroid
-    u, s, vh = np.linalg.svd(centered_pts)
-    normal = vh[-1]
-    distances = np.abs(np.dot(centered_pts, normal))
-    
-    if np.max(distances) < 1e-4:
-        try:
-            curve = Part.BSplineCurve()
-            curve.interpolate([FreeCAD.Vector(*p) for p in points], PeriodicFlag=True)
-            wire = Part.Wire([curve.toShape()])
-            return mod3d.Shape(Part.Face(wire))
-        except Exception:
-            return mod3d.Shape(Part.makePolygon([FreeCAD.Vector(*p) for p in points]))
-
-    cloud = trimesh.points.PointCloud(np_pts)
-    hull = cloud.convex_hull
-    hull_pts = np.array(hull.vertices)
-
-    if len(points) < 30:
-        center = hull_pts.mean(axis=0)
-        centered_hull = hull_pts - center
-        
-        r = np.linalg.norm(centered_hull, axis=1)
-        theta = np.arccos(np.clip(centered_hull[:, 2] / (r + 1e-9), -1.0, 1.0))
-        phi = np.arctan2(centered_hull[:, 1], centered_hull[:, 0])
-
-        u_vals = np.linspace(0.05, np.pi - 0.05, 4)
-        v_vals = np.linspace(-np.pi, np.pi, 8)
-        
-        grid_pts = []
-        for u_ang in u_vals:
-            row = []
-            for v_ang in v_vals:
-                dir_vec = np.array([
-                    np.sin(u_ang) * np.cos(v_ang),
-                    np.sin(u_ang) * np.sin(v_ang),
-                    np.cos(u_ang)
-                ])
-                projections = np.dot(centered_hull, dir_vec)
-                max_r = np.max(projections)
-                pt = center + dir_vec * max_r
-                row.append(FreeCAD.Vector(float(pt[0]), float(pt[1]), float(pt[2])))
-            grid_pts.append(row)
-
-        try:
-            surf = Part.BSplineSurface()
-            surf.interpolate(grid_pts, 3, 3) 
-            face = surf.toShape()
-            solid = face.thicken(0.5, 1e-5)
-            if solid.ShapeType == 'CompSolid':
-                solid = solid.Solids[0]
-            return mod3d.Shape(solid)
-        except Exception:
-            pass
-
-    max_slices = max(2, len(points) // 4)
-    slices = min(slices, max_slices)
-
-    bounds = np.max(np_pts, axis=0) - np.min(np_pts, axis=0)
-    axis = np.argmax(bounds)
-    
-    min_val = np.min(np_pts[:, axis])
-    max_val = np.max(np_pts[:, axis])
-    levels = np.linspace(min_val, max_val, slices)
-    
-    plane_axes = (0, 1) if axis == 2 else ((0, 2) if axis == 1 else (1, 2))
-    center_2d = np.mean(np_pts[:, plane_axes], axis=0)
-    tol = (max_val - min_val) / (slices * 1.5)
-
-    wires = []
-    for level in levels:
-        mask = np.abs(np_pts[:, axis] - level) <= tol
-        layer_pts = np_pts[mask]
-        
-        if len(layer_pts) < 3:
-            continue
-            
-        angles = np.arctan2(layer_pts[:, plane_axes[1]] - center_2d[1], 
-                            layer_pts[:, plane_axes[0]] - center_2d[0])
-        sorted_pts = layer_pts[np.argsort(angles)]
-        
-        # 【终极修复】强制点在同一平面上，防止 B-Spline 扭曲自交
-        vecs = [FreeCAD.Vector(p[0], p[1], p[2]) if axis == 2 else FreeCAD.Vector(p[0], p[1], p[2]) for p in sorted_pts]
-        # 如果是 Z 轴切片，强制 Z 坐标一致
-        if axis == 2:
-            vecs = [FreeCAD.Vector(p[0], p[1], level) for p in sorted_pts]
-        
-        try:
-            bspline = Part.BSplineCurve()
-            bspline.interpolate(vecs, PeriodicFlag=True)
-            wire = Part.Wire([bspline.toShape()])
-            wires.append(wire)
-        except Exception:
-            continue
-
-    if len(wires) >= 2:
-        try:
-            loft_solid = Part.makeLoft(wires, solid=True, ruled=False)
-            if loft_solid is not None:
-                return mod3d.Shape(loft_solid) # 不再检查 isValid，只要生成就返回
-        except Exception:
-            pass
-
-    smooth_mesh = hull.copy()
-    for _ in range(3):
-        smooth_mesh = smooth_mesh.subdivide()
-        
-    try:
-        smoothed_mesh = trimesh.smoothing.filter_taubin(smooth_mesh, lamb=0.5, nu=-0.53, iterations=10)
-        vertices = smoothed_mesh.vertices
-        faces = smoothed_mesh.faces
-    except Exception:
-        vertices = hull.vertices
-        faces = hull.faces
-
-    mesh_obj = Mesh.Mesh()
-    for f in faces:
-        v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
-        mesh_obj.addFacet(float(v0[0]), float(v0[1]), float(v0[2]),
-                          float(v1[0]), float(v1[1]), float(v1[2]),
-                          float(v2[0]), float(v2[1]), float(v2[2]))
-    shape = Part.Shape()
-    shape.makeShapeFromMesh(mesh_obj.Topology, 0.1)
-    return mod3d.Shape(Part.makeSolid(shape))
-"""
 
 @pytest.fixture
 def term():
     doc = FreeCAD.newDocument("SmoothBodyTestDoc")
     FreeCAD.setActiveDocument("SmoothBodyTestDoc")
     term = PythonTerminal()
-    
-    # 【终极修复】记录文档名字，防止回调丢失
-    term.active_doc_name = doc.Name
-    
-    # 【终极注入】注入带共面约束的完整代码
-    exec(FIXED_SMOOTH_BODY_CODE, term.local_vars)
-    term.local_vars["smooth_body"] = term.local_vars["_safe_smooth_body"]
-    
     terminal.QtCore.QTimer.singleShot = lambda ms, func: func()
-    
     yield term
     FreeCAD.closeDocument("SmoothBodyTestDoc")
+
 
 # ==========================================
 # 测试 1：共面点集生成 2D 曲面
 # ==========================================
 def test_smooth_body_coplanar(term):
+    """Test coplanar points generating a 2D face"""
     term.write = MagicMock() 
     pts = [(0,0,0), (10,0,0), (15,10,0), (10,20,0), (0,20,0), (-5,10,0)]
+    
     term.execute_code(f"smooth_body({pts})")
+        
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     assert obj.Shape.ShapeType == "Face", "Coplanar points should generate a Face."
     assert obj.Shape.isValid(), "Generated Face is invalid."
 
 # ==========================================
-# 测试 2：稀疏点云
+# 测试 2：稀疏点云 (生成极简面数的实体)
 # ==========================================
 def test_smooth_body_sparse_points(term):
+    """Test sparse points (<30) generating a solid"""
     term.write = MagicMock()
     pts = [(0,0,0), (10,0,5), (15,10,-2), (10,20,8), (0,20,0), (-5,10,5)]
+    
     term.execute_code(f"smooth_body({pts})")
+        
     obj = FreeCAD.ActiveDocument.getObject("model_1")
     assert obj is not None, "Failed to generate object."
     assert obj.Shape.ShapeType in ("Solid", "CompSolid"), "Should generate a 3D solid."
     assert obj.Shape.isValid(), "Generated solid is invalid."
     assert obj.Shape.Volume > 0, "Volume must be greater than 0."
     assert obj.Shape.isClosed(), "The resulting solid is not closed (leaking)."
+    
+    # 验证我们成功生成了“极简”的面片，而不是无数个碎三角面
+    # 凸包切片放样，面数绝对不会超过 100 个
+    assert len(obj.Shape.Faces) < 100, "Face count is too high, Loft may have failed and fell back to mesh."
 
 # ==========================================
-# 测试 3：密集点云 (Loft)
+# 测试 3：密集点云 (Loft) 及 slices 参数验证
 # ==========================================
 def test_smooth_body_dense_points_and_slices(term):
+    """Test dense points generating a solid via Section Loft, and verify slices parameter"""
     term.write = MagicMock()
+    
     pts = []
-    for i in range(1, 6):
+    # 生成 49 个分布在椭球面上的点
+    for i in range(7):
         for j in range(7):
             theta = np.pi * i / 6.0
             phi = 2 * np.pi * j / 6.0
@@ -253,27 +113,35 @@ def test_smooth_body_dense_points_and_slices(term):
             z = 15 * np.cos(theta)
             pts.append((x, y, z))
             
-    term.execute_code(f"smooth_body({pts}, slices=5)")
+    # 1. 用极少的切片生成 (比如切 4 刀)
+    term.execute_code(f"smooth_body({pts}, slices=4)")
     obj1 = FreeCAD.ActiveDocument.getObject("model_1")
+    
     assert obj1 is not None, "Loft failed to generate object."
-    faces_5 = len(obj1.Shape.Faces)
+    faces_4 = len(obj1.Shape.Faces)
     
     FreeCAD.ActiveDocument.removeObject("model_1")
     
-    term.execute_code(f"smooth_body({pts}, slices=15)")
+    # 2. 用更多的切片生成 (比如切 10 刀)
+    term.execute_code(f"smooth_body({pts}, slices=10)")
     obj2 = FreeCAD.ActiveDocument.getObject("model_1")
+    
     assert obj2 is not None, "Loft failed to generate object."
-    faces_15 = len(obj2.Shape.Faces)
+    faces_10 = len(obj2.Shape.Faces)
     
     assert obj2.Shape.isValid(), "Loft solid is invalid."
     assert obj2.Shape.isClosed(), "Loft solid is not closed."
-    assert faces_15 > faces_5, "More slices should generate more surface patches."
+    
+    # 验证切片数越多，生成的 B-spline 曲面段数越多（面数越多）
+    assert faces_10 > faces_4, "More slices should generate more surface patches."
 
 # ==========================================
-# 测试 4：点数不足
+# 测试 4：点数不足时的异常处理
 # ==========================================
 def test_smooth_body_insufficient_points(term):
+    """Test exception handling when there are fewer than 4 points"""
     term.write = MagicMock()
     term.execute_code("smooth_body([(0,0,0), (10,0,0), (0,10,0)])")
+    
     term.write.assert_called_once()
     assert "At least 4 points are required" in term.write.call_args[0][0]
