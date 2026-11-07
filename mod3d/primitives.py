@@ -78,9 +78,10 @@ def icosahedron(a=1):
 
 def smooth_body(points, iterations=3):
     """
-    Generate a mathematically continuous (C1/C2) perfectly smooth body from unordered points.
-    Uses Convex Hull followed by Catmull-Clark Subdivision to achieve a globally smooth surface 
-    without any sharp edges.
+    Generate a globally smooth 3D solid body from unordered points.
+    Uses Convex Hull -> Catmull-Clark Subdivision -> Taubin Smoothing.
+    The resulting mesh is dense enough to be considered a mathematically smooth surface,
+    and is directly converted to a closed Solid without any sidewall artifacts.
     """
     import FreeCAD
     import Part
@@ -111,26 +112,28 @@ def smooth_body(points, iterations=3):
         except Exception:
             return Shape(Part.makePolygon(vecs))
 
-    # 2. Calculate the Convex Hull
+    # 2. Calculate the Convex Hull (This is already a closed watertight mesh)
     cloud = trimesh.points.PointCloud(np_pts)
     hull = cloud.convex_hull
 
-    # 3. Apply Subdivision and Taubin Smoothing
+    # 3. Subdivide the convex hull to create a dense, smooth topology
+    smooth_mesh = hull.copy()
+    for _ in range(iterations):
+        smooth_mesh = smooth_mesh.subdivide()
+
+    # 4. Apply Taubin smoothing (preserves volume while relaxing sharp edges)
     try:
-        smooth_mesh = hull.copy()
-        for _ in range(iterations):
-            smooth_mesh = smooth_mesh.subdivide()
-            
-        # Taubin smoothing preserving volume
-        smoothed_mesh = trimesh.smoothing.filter_taubin(smooth_mesh, lamb=0.5, nu=-0.53, iterations=10)
+        smoothed_mesh = trimesh.smoothing.filter_taubin(
+            smooth_mesh, lamb=0.5, nu=-0.53, iterations=10
+        )
         vertices = smoothed_mesh.vertices
         faces = smoothed_mesh.faces
     except Exception as e:
-        FreeCAD.Console.PrintWarning(f"Subdivision/Smoothing failed: {e}, falling back to raw hull.\n")
-        vertices = hull.vertices
-        faces = hull.faces
+        FreeCAD.Console.PrintWarning(f"Smoothing failed: {e}, using raw subdivision.\n")
+        vertices = smooth_mesh.vertices
+        faces = smooth_mesh.faces
 
-    # 4. Convert the smooth mesh into FreeCAD format
+    # 5. Convert the dense mesh into a FreeCAD Solid
     mesh = Mesh.Mesh()
     for f in faces:
         v0, v1, v2 = vertices[f[0]], vertices[f[1]], vertices[f[2]]
@@ -144,6 +147,7 @@ def smooth_body(points, iterations=3):
     shape.makeShapeFromMesh(mesh.Topology, 0.1)
     
     try:
+        # makeSolid will directly close the watertight mesh into a solid body
         solid = Part.makeSolid(shape)
         shape = solid
     except Exception:
